@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import VolumeBox from "./VolumeBox";
 import DrawingVolume from "./DrawingVolume";
 import EditingVolume from "./EditingVolume";
+import OOBBOverlay from "./OOBBOverlay";
 
 const worldNormalMaterial = new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
@@ -40,7 +41,7 @@ const wireframeMaterial = new THREE.ShaderMaterial({
   `,
 });
 
-function SceneModel({ url, wireframe }) {
+function SceneModel({ url, wireframe, onSceneReady }) {
   const { scene } = useGLTF(url);
 
   useEffect(() => {
@@ -52,6 +53,12 @@ function SceneModel({ url, wireframe }) {
       }
     });
   }, [scene, wireframe]);
+
+  useEffect(() => {
+    if (onSceneReady) {
+      onSceneReady(scene);
+    }
+  }, [scene, onSceneReady]);
 
   return <primitive object={scene} />;
 }
@@ -103,6 +110,9 @@ export default function SceneViewer({
   onEditComplete,
   wireframe,
   orthographic,
+  onSceneReady,
+  detectedObjects,
+  showOOBBs,
 }) {
   return (
     <div className="scene-viewer">
@@ -113,7 +123,7 @@ export default function SceneViewer({
         <color attach="background" args={["#0d1117"]} />
         <CameraController orthographic={orthographic} />
 
-        {sceneUrl && <SceneModel url={sceneUrl} wireframe={wireframe} />}
+        {sceneUrl && <SceneModel url={sceneUrl} wireframe={wireframe} onSceneReady={onSceneReady} />}
         <GroundPlane />
 
         {volumes.map((vol) =>
@@ -132,6 +142,10 @@ export default function SceneViewer({
             />
           )
         )}
+
+        {showOOBBs && detectedObjects && detectedObjects.map((obj, i) => (
+          <OOBBOverlay key={`oobb-${i}`} oobb={obj} />
+        ))}
 
         {isDrawing && <DrawingVolume onVolumeCreated={onVolumeCreated} />}
 
