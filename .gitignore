@@ -8,6 +8,9 @@ frontend/dist/
 build/
 dist/
 
+# Vite cache
+.vite/
+
 # Environment
 .env
 .env.local

@@ -3,8 +3,11 @@ import SceneViewer from "./components/SceneViewer";
 import Toolbar from "./components/Toolbar";
 import VolumeList from "./components/VolumeList";
 import VolumeDialog from "./components/VolumeDialog";
+import ObjectDetectionPanel from "./components/ObjectDetectionPanel";
+import RenderingPanel from "./components/RenderingPanel";
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState("connectivity");
   const [sceneUrl, setSceneUrl] = useState(null);
   const [sceneFilename, setSceneFilename] = useState(null);
   const [volumes, setVolumes] = useState([]);
@@ -16,8 +19,6 @@ export default function App() {
   const [orthographic, setOrthographic] = useState(false);
 
   const handleFileLoad = useCallback((file) => {
-    // Load directly in browser via blob URL — no server upload needed
-    // This handles large files (hundreds of MB) without proxy/upload limits
     if (sceneUrl && sceneUrl.startsWith("blob:")) {
       URL.revokeObjectURL(sceneUrl);
     }
@@ -108,9 +109,37 @@ export default function App() {
     URL.revokeObjectURL(url);
   }, [volumes, sceneFilename]);
 
+  const handleTabChange = useCallback((tab) => {
+    setActiveTab(tab);
+    setIsDrawing(false);
+    setEditingVolumeId(null);
+  }, []);
+
+  const renderSidePanel = () => {
+    switch (activeTab) {
+      case "connectivity":
+        return (
+          <VolumeList
+            volumes={volumes}
+            selectedVolumeId={selectedVolumeId}
+            onSelect={setSelectedVolumeId}
+            onDelete={handleDeleteVolume}
+          />
+        );
+      case "detection":
+        return <ObjectDetectionPanel hasScene={!!sceneUrl} sceneFilename={sceneFilename} />;
+      case "rendering":
+        return <RenderingPanel hasScene={!!sceneUrl} sceneFilename={sceneFilename} />;
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="app">
       <Toolbar
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
         onFileLoad={handleFileLoad}
         onStartDraw={handleStartDraw}
         onExport={handleExport}
@@ -125,8 +154,8 @@ export default function App() {
       <div className="main-content">
         <SceneViewer
           sceneUrl={sceneUrl}
-          volumes={volumes}
-          isDrawing={isDrawing}
+          volumes={activeTab === "connectivity" ? volumes : []}
+          isDrawing={isDrawing && activeTab === "connectivity"}
           onVolumeCreated={handleVolumeCreated}
           selectedVolumeId={selectedVolumeId}
           editingVolumeId={editingVolumeId}
@@ -135,12 +164,7 @@ export default function App() {
           wireframe={wireframe}
           orthographic={orthographic}
         />
-        <VolumeList
-          volumes={volumes}
-          selectedVolumeId={selectedVolumeId}
-          onSelect={setSelectedVolumeId}
-          onDelete={handleDeleteVolume}
-        />
+        {renderSidePanel()}
       </div>
       {pendingVolume && (
         <VolumeDialog

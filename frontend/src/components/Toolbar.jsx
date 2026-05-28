@@ -1,6 +1,14 @@
 import React, { useRef } from "react";
 
+const TABS = [
+  { id: "connectivity", label: "Connectivity" },
+  { id: "detection", label: "Object Detection" },
+  { id: "rendering", label: "Rendering" },
+];
+
 export default function Toolbar({
+  activeTab,
+  onTabChange,
   onFileLoad,
   onStartDraw,
   onExport,
@@ -24,8 +32,21 @@ export default function Toolbar({
 
   return (
     <div className="toolbar">
-      <div className="toolbar-brand">
-        <h1>Room Connect</h1>
+      <div className="toolbar-left">
+        <div className="toolbar-brand">
+          <h1>Room Connect</h1>
+        </div>
+        <div className="toolbar-tabs">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              className={`tab-btn ${activeTab === tab.id ? "active" : ""}`}
+              onClick={() => onTabChange(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="toolbar-actions">
         <input
@@ -41,20 +62,25 @@ export default function Toolbar({
         >
           Load Scene (.glb)
         </button>
-        <button
-          className="btn btn-accent"
-          onClick={onStartDraw}
-          disabled={!hasScene || isDrawing}
-        >
-          {isDrawing ? "Drawing..." : "Draw Volume"}
-        </button>
-        <button
-          className="btn btn-export"
-          onClick={onExport}
-          disabled={!hasVolumes}
-        >
-          Export Graph (JSON)
-        </button>
+
+        {activeTab === "connectivity" && (
+          <>
+            <button
+              className="btn btn-accent"
+              onClick={onStartDraw}
+              disabled={!hasScene || isDrawing}
+            >
+              {isDrawing ? "Drawing..." : "Draw Volume"}
+            </button>
+            <button
+              className="btn btn-export"
+              onClick={onExport}
+              disabled={!hasVolumes}
+            >
+              Export Graph (JSON)
+            </button>
+          </>
+        )}
 
         <span className="toolbar-separator" />
 
