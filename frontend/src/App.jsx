@@ -16,7 +16,7 @@ export default function App() {
   const [pendingVolume, setPendingVolume] = useState(null);
   const [selectedVolumeId, setSelectedVolumeId] = useState(null);
   const [editingVolumeId, setEditingVolumeId] = useState(null);
-  const [wireframe, setWireframe] = useState(false);
+  const [shadingMode, setShadingMode] = useState("normals"); // normals | wireframe | diffuse | textured
   const [orthographic, setOrthographic] = useState(false);
 
   // Object detection state
@@ -206,8 +206,8 @@ export default function App() {
         isDrawing={isDrawing}
         hasScene={!!sceneUrl}
         hasVolumes={volumes.length > 0}
-        wireframe={wireframe}
-        onToggleWireframe={() => setWireframe((w) => !w)}
+        shadingMode={shadingMode}
+        onShadingModeChange={setShadingMode}
         orthographic={orthographic}
         onToggleOrthographic={() => setOrthographic((o) => !o)}
       />
@@ -221,7 +221,7 @@ export default function App() {
           editingVolumeId={editingVolumeId}
           onEditVolume={handleEditVolume}
           onEditComplete={handleEditComplete}
-          wireframe={wireframe}
+          shadingMode={shadingMode}
           orthographic={orthographic}
           onSceneReady={handleSceneReady}
           detectedObjects={activeTab === "detection" ? detectedObjects : []}

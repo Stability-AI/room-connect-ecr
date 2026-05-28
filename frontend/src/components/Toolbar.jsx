@@ -6,6 +6,13 @@ const TABS = [
   { id: "rendering", label: "Rendering" },
 ];
 
+const SHADING_MODES = [
+  { id: "normals", label: "Normals" },
+  { id: "wireframe", label: "Wireframe" },
+  { id: "diffuse", label: "Diffuse" },
+  { id: "textured", label: "Textured" },
+];
+
 export default function Toolbar({
   activeTab,
   onTabChange,
@@ -15,8 +22,8 @@ export default function Toolbar({
   isDrawing,
   hasScene,
   hasVolumes,
-  wireframe,
-  onToggleWireframe,
+  shadingMode,
+  onShadingModeChange,
   orthographic,
   onToggleOrthographic,
 }) {
@@ -84,13 +91,21 @@ export default function Toolbar({
 
         <span className="toolbar-separator" />
 
-        <button
-          className={`btn btn-toggle ${wireframe ? "active" : ""}`}
-          onClick={onToggleWireframe}
-          disabled={!hasScene}
-        >
-          {wireframe ? "Shaded" : "Wireframe"}
-        </button>
+        <div className="shading-modes">
+          {SHADING_MODES.map((mode) => (
+            <button
+              key={mode.id}
+              className={`btn btn-shading ${shadingMode === mode.id ? "active" : ""}`}
+              onClick={() => onShadingModeChange(mode.id)}
+              disabled={!hasScene}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+
+        <span className="toolbar-separator" />
+
         <button
           className={`btn btn-toggle ${orthographic ? "active" : ""}`}
           onClick={onToggleOrthographic}

@@ -118,6 +118,43 @@ body {
   border-color: var(--accent-blue);
 }
 
+/* Shading mode buttons */
+.shading-modes {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-primary);
+  border-radius: var(--radius);
+  padding: 3px;
+}
+
+.btn-shading {
+  padding: 5px 10px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+
+.btn-shading:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.btn-shading.active {
+  background: var(--accent-blue);
+  color: #000;
+  font-weight: 600;
+}
+
+.btn-shading:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Buttons */
 .btn {
   padding: 8px 16px;
