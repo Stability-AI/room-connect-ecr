@@ -1,0 +1,53 @@
+---
+description: Coding style, naming, and documentation standards
+globs: ["src/**/*.py", "tests/**/*.py"]
+alwaysApply: false
+---
+
+# Code Style & Standards
+
+## Formatting
+- **ruff format** is the formatter. Never manually reformat code that ruff would reformat differently.
+- Line length: **88 characters** (ruff default).
+- Use double quotes for strings (`"hello"`, not `'hello'`).
+
+## Naming conventions
+| Construct | Convention | Example |
+|-----------|-----------|---------|
+| Module | `snake_case` | `volume_io.py` |
+| Class | `PascalCase` | `ConnectivityGraph` |
+| Function / method | `snake_case` | `load_volume()` |
+| Constant | `UPPER_SNAKE_CASE` | `DEFAULT_SPACING` |
+| Private | leading underscore | `_internal_helper()` |
+
+## Docstrings
+- Use **Google-style** docstrings for all public classes, methods, and functions.
+- Include `Args:`, `Returns:`, and `Raises:` sections where applicable.
+
+```python
+def add_edge(self, source: int, target: int, weight: float = 1.0) -> None:
+    """Add a directed edge between two nodes.
+
+    Args:
+        source: Integer node ID of the source node.
+        target: Integer node ID of the target node.
+        weight: Edge weight; defaults to 1.0.
+
+    Raises:
+        ValueError: If either node ID does not exist in the graph.
+    """
+```
+
+## Testing
+- Mirror the `src/room_connect/` structure under `tests/` (e.g. `tests/test_graph.py`).
+- Use **pytest fixtures** for shared state; avoid module-level globals.
+- Aim for ≥ 80 % line coverage on new code.
+- Name test functions `test_<what_is_being_tested>_<expected_outcome>`.
+
+## Error handling
+- Raise specific built-in exceptions (`ValueError`, `TypeError`, `FileNotFoundError`) with descriptive messages.
+- Do not use bare `except:` or `except Exception:` without re-raising or logging.
+
+## Imports
+- Follow ruff's `I` ruleset: stdlib → third-party → first-party, each group separated by a blank line.
+- Do not use wildcard imports (`from module import *`).
