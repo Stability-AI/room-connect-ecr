@@ -1,0 +1,44 @@
+---
+description: Git workflow, branching strategy, and commit message format
+alwaysApply: true
+---
+
+# Git Workflow
+
+## Branching
+- `main` — protected; always releasable.
+- Feature branches: `feat/<short-description>` (e.g. `feat/hdf5-loader`).
+- Bug-fix branches: `fix/<short-description>` (e.g. `fix/edge-weight-overflow`).
+- Chore / maintenance: `chore/<short-description>`.
+
+## Commit messages
+Follow **Conventional Commits** (https://www.conventionalcommits.org/):
+
+```
+<type>(<optional scope>): <short imperative summary>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`.
+
+Examples:
+```
+feat(graph): add Dijkstra shortest-path query method
+fix(volume): handle non-isotropic voxel spacing in loader
+docs: update README with quickstart example
+test(editor): add coverage for node deletion edge cases
+```
+
+## Pull requests
+- Keep PRs small and focused on a single concern.
+- Include a clear description of *what* changed and *why*.
+- All CI checks (lint, type-check, tests) must pass before merging.
+- Squash-merge feature branches into `main`.
+
+## Do not commit
+- Secrets, API keys, or credentials of any kind.
+- Large binary files — use Git LFS or store externally.
+- Auto-generated files that are listed in `.gitignore`.

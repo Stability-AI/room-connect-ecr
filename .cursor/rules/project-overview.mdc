@@ -1,0 +1,40 @@
+---
+description: Project overview, goals, and architecture for room-connect
+alwaysApply: true
+---
+
+# room-connect — Project Overview
+
+room-connect is an **interactive 3D volume connectivity editor**. It lets users load, visualise, and edit connectivity graphs embedded in 3D volumetric data (e.g. architectural room layouts, cellular networks, cave systems). Connectivity is represented as a graph whose nodes are volumetric regions and whose edges encode adjacency or passage relationships.
+
+## High-level goals
+
+1. Load volumetric data from standard formats (NumPy `.npy`, NIfTI, HDF5).
+2. Render interactive 3D visualisations of the volume and its connectivity graph.
+3. Allow users to add, remove, and re-label nodes and edges through both a GUI and a Python API.
+4. Export the edited connectivity graph and annotated volume to standard formats.
+
+## Repository layout
+
+```
+room-connect/
+├── src/room_connect/       # Installable Python package (src layout)
+│   ├── __init__.py
+│   ├── graph.py            # Connectivity graph data model
+│   ├── volume.py           # Volume loading / processing utilities
+│   ├── editor.py           # High-level editor API
+│   └── viz/                # Visualisation back-ends
+│       ├── __init__.py
+│       └── renderer.py
+├── tests/                  # pytest test suite
+├── docs/                   # Documentation source (MkDocs)
+├── pyproject.toml          # Project metadata and build config
+└── README.md
+```
+
+## Development workflow
+
+- Install in editable mode: `pip install -e ".[dev]"`
+- Run tests: `pytest`
+- Lint / format: `ruff check . && ruff format .`
+- Type-check: `mypy src`
