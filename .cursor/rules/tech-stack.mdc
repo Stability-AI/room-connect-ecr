@@ -1,40 +1,31 @@
----
-description: Technology stack choices and conventions for room-connect
-alwaysApply: true
----
-
 # Technology Stack
 
-## Language & runtime
-- **Python >= 3.11** — primary implementation language.
-
-## Core dependencies
+## Frontend
 | Library | Role |
-|---------|------|
-| `numpy` | Volumetric array operations |
-| `networkx` | Connectivity graph representation and algorithms |
-| `pyvista` | 3D interactive rendering (wraps VTK) |
-| `nibabel` | NIfTI volume I/O |
-| `h5py` | HDF5 volume I/O |
-| `rich` | CLI output formatting |
+|---|---|
+| `react` | UI framework |
+| `@react-three/fiber` | React renderer for Three.js |
+| `@react-three/drei` | Three.js helpers and abstractions |
+| `three` | 3D rendering engine |
+| `vite` | Build tool and dev server |
+| `uuid` | Unique ID generation |
 
-## Dev / tooling dependencies
+## Backend
+| Library | Role |
+|---|---|
+| `flask` | Python web framework |
+| `flask-cors` | Cross-origin request handling |
+| `gunicorn` | Production WSGI server |
+
+## Infrastructure
 | Tool | Role |
-|------|------|
-| `pytest` | Test runner |
-| `pytest-cov` | Coverage reports |
-| `ruff` | Linter **and** formatter (replaces flake8 + black + isort) |
-| `mypy` | Static type checking |
-| `pre-commit` | Git hook manager |
-
-## Project packaging
-- **src layout** — all importable code lives under `src/room_connect/`.
-- **`pyproject.toml`** — single source of truth for metadata, build config, and tool settings (no `setup.cfg`, no `setup.py`).
-- Build backend: `hatchling`.
+|---|---|
+| `docker` | Containerization |
+| `docker-compose` | Multi-service orchestration |
 
 ## Code conventions
-- Use **type annotations** on all public functions and class members.
-- Prefer `pathlib.Path` over `str` for file paths.
-- Use `numpy` typed arrays (`npt.NDArray`) rather than bare `np.ndarray` in signatures.
-- Keep functions small and single-purpose; complex algorithms go in dedicated modules.
-- Follow ruff's default ruleset (E, F, I, UP, B) — do not suppress warnings without justification.
+- React functional components with hooks
+- JSX for component files
+- CSS custom properties for theming
+- Flask for minimal API endpoints (file upload, scene serving)
+- Axis-aligned bounding boxes only (no rotation)
