@@ -11,6 +11,20 @@ Room Connect lets users:
 3. Name each volume and define which other volumes it connects to
 4. Compute and export a connectivity graph as a JSON metadata file
 
+## Screenshots
+
+![Drawing a volume with normal shading](docs/image%20(1).png)
+*Drawing a volume in normal-shaded mode with scale/translate handles visible*
+
+![Wireframe mode with volume drawing](docs/image%20(2).png)
+*Wireframe rendering mode with a volume being drawn*
+
+![Orthographic view in wireframe with editing](docs/image%20(3).png)
+*Orthographic projection in wireframe mode — editing an existing volume*
+
+![Wireframe with confirmed volume](docs/image.png)
+*Wireframe view showing a confirmed volume in the volume list*
+
 ## Tech Stack
 
 | Layer | Technology |
