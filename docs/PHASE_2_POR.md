@@ -81,6 +81,7 @@ Port the existing Trimesh-based safe camera sampling to the chosen backend:
 ### Frontend Rendering (if chosen)
 - Use Three.js `WebGLRenderer` to capture views (`renderer.domElement.toDataURL()`)
 - No backend round-trip needed, but limited to rasterization (no path-tracing)
+- **Reference implementation**: [THREE.js-PathTracing-Renderer — glTF Viewer](https://erichlof.github.io/THREE.js-PathTracing-Renderer/GLTF_Model_Viewer.html) — use as starting point for client-side path-traced rendering of GLB scenes
 
 ---
 
