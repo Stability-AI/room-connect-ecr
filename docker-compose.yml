@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+      - uploads:/tmp/room-connect-uploads
+    environment:
+      - UPLOAD_DIR=/tmp/room-connect-uploads
+      - FLASK_ENV=development
+    command: python app.py
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+  # Production-ready single container setup
+  production:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - uploads:/tmp/room-connect-uploads
+    environment:
+      - UPLOAD_DIR=/tmp/room-connect-uploads
+    profiles:
+      - prod
+
+volumes:
+  uploads:
