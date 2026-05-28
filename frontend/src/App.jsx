@@ -1,10 +1,11 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import SceneViewer from "./components/SceneViewer";
 import Toolbar from "./components/Toolbar";
 import VolumeList from "./components/VolumeList";
 import VolumeDialog from "./components/VolumeDialog";
 import ObjectDetectionPanel from "./components/ObjectDetectionPanel";
 import RenderingPanel from "./components/RenderingPanel";
+import { detectObjects } from "./utils/objectDetection";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("connectivity");
@@ -18,6 +19,11 @@ export default function App() {
   const [wireframe, setWireframe] = useState(false);
   const [orthographic, setOrthographic] = useState(false);
 
+  // Object detection state
+  const [detectedObjects, setDetectedObjects] = useState([]);
+  const [showOOBBs, setShowOOBBs] = useState(true);
+  const sceneRef = useRef(null);
+
   const handleFileLoad = useCallback((file) => {
     if (sceneUrl && sceneUrl.startsWith("blob:")) {
       URL.revokeObjectURL(sceneUrl);
@@ -26,7 +32,51 @@ export default function App() {
     setSceneUrl(blobUrl);
     setSceneFilename(file.name);
     setVolumes([]);
+    setDetectedObjects([]);
   }, [sceneUrl]);
+
+  const handleSceneReady = useCallback((scene) => {
+    sceneRef.current = scene;
+  }, []);
+
+  const handleDetectObjects = useCallback((filterTerms, exclusive) => {
+    if (!sceneRef.current) return;
+    const terms = filterTerms.split(",").map((t) => t.trim()).filter(Boolean);
+    const results = detectObjects(sceneRef.current, terms, exclusive);
+    setDetectedObjects(results);
+    setShowOOBBs(true);
+  }, []);
+
+  const handleToggleOOBBs = useCallback(() => {
+    setShowOOBBs((prev) => !prev);
+  }, []);
+
+  const handleExportObjects = useCallback(() => {
+    if (detectedObjects.length === 0) return;
+    const exportData = {
+      scene: sceneFilename,
+      objects: detectedObjects.map((obj) => ({
+        name: obj.name,
+        oobb: {
+          center: obj.center,
+          halfExtents: obj.halfExtents,
+          rotation: obj.rotation,
+        },
+        worldPosition: obj.worldPosition,
+        worldScale: obj.worldScale,
+      })),
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "detected_objects.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [detectedObjects, sceneFilename]);
 
   const handleStartDraw = useCallback(() => {
     setIsDrawing(true);
@@ -127,7 +177,17 @@ export default function App() {
           />
         );
       case "detection":
-        return <ObjectDetectionPanel hasScene={!!sceneUrl} sceneFilename={sceneFilename} />;
+        return (
+          <ObjectDetectionPanel
+            hasScene={!!sceneUrl}
+            sceneFilename={sceneFilename}
+            onDetect={handleDetectObjects}
+            onToggleOOBBs={handleToggleOOBBs}
+            onExport={handleExportObjects}
+            detectedObjects={detectedObjects}
+            showOOBBs={showOOBBs}
+          />
+        );
       case "rendering":
         return <RenderingPanel hasScene={!!sceneUrl} sceneFilename={sceneFilename} />;
       default:
@@ -163,6 +223,9 @@ export default function App() {
           onEditComplete={handleEditComplete}
           wireframe={wireframe}
           orthographic={orthographic}
+          onSceneReady={handleSceneReady}
+          detectedObjects={activeTab === "detection" ? detectedObjects : []}
+          showOOBBs={showOOBBs}
         />
         {renderSidePanel()}
       </div>
