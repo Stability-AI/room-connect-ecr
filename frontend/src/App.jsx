@@ -9,6 +9,7 @@ import { detectObjects, cullOverlappingOOBBs } from "./utils/objectDetection";
 import { uploadSceneChunked } from "./utils/sceneUpload";
 import { v4 as uuidv4 } from "uuid";
 import { BLENDER_FOV } from "./components/CameraFrustum";
+import { autoPlaceCameras } from "./utils/cameraPlacement";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("connectivity");
@@ -258,6 +259,32 @@ export default function App() {
     setActiveCameraView(null);
   }, []);
 
+  const handleAutoPlaceCameras = useCallback((count, maximizeEntropy) => {
+    if (!sceneRef.current) return;
+
+    const result = autoPlaceCameras(
+      sceneRef.current,
+      count,
+      detectedObjects,
+      maximizeEntropy
+    );
+
+    if (result.cameras.length === 0) {
+      console.warn("[AutoPlace] Could not generate any valid camera positions");
+      return;
+    }
+
+    const newCameras = result.cameras.map((cam, i) => ({
+      id: uuidv4(),
+      name: `Auto ${cameras.length + i + 1}`,
+      position: cam.position,
+      quaternion: cam.quaternion,
+      fov: BLENDER_FOV,
+    }));
+
+    setCameras((prev) => [...prev, ...newCameras]);
+  }, [cameras.length, detectedObjects]);
+
   const getCameraExportData = useCallback(() => {
     const aspect = 16 / 9;
     const fovRad = (BLENDER_FOV * Math.PI) / 180;
@@ -318,11 +345,13 @@ export default function App() {
             cameras={cameras}
             selectedCameraId={selectedCameraId}
             onPlaceCamera={handlePlaceCamera}
+            onAutoPlaceCameras={handleAutoPlaceCameras}
             onSelectCamera={handleSelectCamera}
             onRealignCamera={handleRealignCamera}
             onDeleteCamera={handleDeleteCamera}
             onClearAllCameras={handleClearAllCameras}
             exportCameraData={getCameraExportData}
+            hasDetectedObjects={detectedObjects.length > 0}
           />
         );
       default:

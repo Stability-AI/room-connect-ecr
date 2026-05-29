@@ -8,13 +8,16 @@ export default function RenderingPanel({
   cameras,
   selectedCameraId,
   onPlaceCamera,
+  onAutoPlaceCameras,
   onSelectCamera,
   onRealignCamera,
   onDeleteCamera,
   onClearAllCameras,
   exportCameraData,
+  hasDetectedObjects,
 }) {
   const [cameraCount, setCameraCount] = useState(10);
+  const [maximizeEntropy, setMaximizeEntropy] = useState(false);
   const [renderWidth, setRenderWidth] = useState(1920);
   const [renderHeight, setRenderHeight] = useState(1080);
   const [samples, setSamples] = useState(128);
@@ -30,7 +33,9 @@ export default function RenderingPanel({
   const [renderResults, setRenderResults] = useState(null);
 
   const handleAutoPlace = () => {
-    console.log("[Rendering] Will auto-generate", cameraCount, "camera positions");
+    if (onAutoPlaceCameras) {
+      onAutoPlaceCameras(cameraCount, maximizeEntropy);
+    }
   };
 
   const handleRender = async () => {
@@ -153,8 +158,22 @@ export default function RenderingPanel({
                 onChange={(e) => setCameraCount(parseInt(e.target.value) || 1)}
               />
             </div>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={maximizeEntropy}
+                onChange={(e) => setMaximizeEntropy(e.target.checked)}
+                disabled={!hasDetectedObjects}
+              />
+              <span>Maximize Viewpoint Entropy</span>
+            </label>
+            {maximizeEntropy && !hasDetectedObjects && (
+              <p className="panel-hint" style={{ color: "var(--accent-orange)" }}>
+                Detect objects first (Object Detection tab) to enable entropy-based orientation.
+              </p>
+            )}
             <div className="panel-actions">
-              <button className="btn btn-accent" onClick={handleAutoPlace}>
+              <button className="btn btn-accent" onClick={handleAutoPlace} disabled={!hasScene}>
                 Auto-Place Cameras
               </button>
               <button className="btn btn-primary" onClick={onPlaceCamera}>
