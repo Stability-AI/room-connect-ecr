@@ -6,6 +6,7 @@ import VolumeDialog from "./components/VolumeDialog";
 import ObjectDetectionPanel from "./components/ObjectDetectionPanel";
 import RenderingPanel from "./components/RenderingPanel";
 import { detectObjects, cullOverlappingOOBBs } from "./utils/objectDetection";
+import { uploadSceneChunked } from "./utils/sceneUpload";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("connectivity");
@@ -24,6 +25,10 @@ export default function App() {
   const [showOOBBs, setShowOOBBs] = useState(true);
   const sceneRef = useRef(null);
 
+  // Backend upload state
+  const [sceneFileId, setSceneFileId] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(null);
+
   const handleFileLoad = useCallback((file) => {
     if (sceneUrl && sceneUrl.startsWith("blob:")) {
       URL.revokeObjectURL(sceneUrl);
@@ -33,6 +38,21 @@ export default function App() {
     setSceneFilename(file.name);
     setVolumes([]);
     setDetectedObjects([]);
+    setSceneFileId(null);
+    setUploadProgress(0);
+
+    // Upload to backend in parallel for rendering support
+    uploadSceneChunked(file, (progress) => {
+      setUploadProgress(progress);
+    })
+      .then((result) => {
+        setSceneFileId(`${result.id}_${result.filename}`);
+        setUploadProgress(null);
+      })
+      .catch((err) => {
+        console.error("Backend upload failed:", err);
+        setUploadProgress(null);
+      });
   }, [sceneUrl]);
 
   const handleSceneReady = useCallback((scene) => {
@@ -200,7 +220,13 @@ export default function App() {
           />
         );
       case "rendering":
-        return <RenderingPanel hasScene={!!sceneUrl} sceneFilename={sceneFilename} />;
+        return (
+          <RenderingPanel
+            hasScene={!!sceneUrl}
+            sceneFilename={sceneFilename}
+            sceneFileId={sceneFileId}
+          />
+        );
       default:
         return null;
     }

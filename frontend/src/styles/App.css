@@ -607,3 +607,30 @@ body {
   color: var(--text-secondary);
   margin-bottom: 8px;
 }
+
+/* Checkbox row */
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.checkbox-row input[type="checkbox"] {
+  accent-color: var(--accent-blue);
+  width: 16px;
+  height: 16px;
+}
+
+/* Render status */
+.render-status {
+  font-size: 0.8rem;
+  color: var(--accent-orange);
+  margin-top: 8px;
+}
+
+.render-status.success {
+  color: var(--accent-green);
+}
