@@ -1,38 +1,54 @@
 # room-connect — Project Overview
 
-room-connect is an **interactive web-based 3D connectivity editor**. It lets users load GLTF/GLB 3D scenes, draw axis-aligned bounding box volumes to define walkable areas, and export connectivity graphs as JSON metadata.
+room-connect is an **interactive web-based 3D connectivity editor and rendering pipeline**. It lets users load GLTF/GLB 3D scenes, draw axis-aligned bounding box volumes to define walkable areas, detect objects with OOBBs, place cameras, and render views via Blender Cycles.
 
-## High-level goals
+## High-level features
 
-1. Load 3D scenes from GLTF/GLB format and render them interactively via Three.js.
-2. Allow users to draw, translate, and scale axis-aligned bounding box volumes in 3D space.
-3. Let users name volumes and define connectivity relationships between them.
-4. Export the connectivity graph as a structured JSON file.
+1. **Volume Connectivity**: Draw, translate, scale AABB volumes; define connectivity; export graph JSON.
+2. **Object Detection**: Filter scene meshes by name, compute OOBBs, cull overlapping boxes, export object JSON.
+3. **Rendering**: Place cameras manually (Place at View), render from all cameras via Blender Cycles (backend), override lighting with brightness control, export ZIP of renders + depthmaps + .blend files + camera intrinsics/extrinsics.
 
 ## Repository layout
 
 ```
 room-connect/
-├── backend/                # Python Flask API server
-│   ├── app.py
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/               # React + Three.js application
+├── backend/                    # Python Flask API + Blender BPY rendering
+│   ├── app.py                  # Flask routes (upload, render SSE, serve files)
+│   ├── rendering/
+│   │   └── cycles_renderer.py  # Blender Cycles render engine (multi-camera, material repair)
+│   ├── requirements.txt        # Flask, flask-cors, gunicorn, bpy
+│   └── Dockerfile              # Python 3.11 + bpy (linux/amd64)
+├── frontend/                   # React + Three.js (Vite)
 │   ├── src/
-│   │   ├── App.jsx
-│   │   ├── components/     # React components
-│   │   └── styles/         # CSS
+│   │   ├── App.jsx             # Main state management
+│   │   ├── components/
+│   │   │   ├── SceneViewer.jsx         # Three.js canvas + shading modes
+│   │   │   ├── DrawingVolume.jsx       # Volume creation tool
+│   │   │   ├── EditingVolume.jsx       # Volume editing handles
+│   │   │   ├── VolumeBox.jsx           # Rendered volume display
+│   │   │   ├── VolumeDialog.jsx        # Name/connection dialog
+│   │   │   ├── VolumeList.jsx          # Side panel volume list
+│   │   │   ├── ObjectDetectionPanel.jsx # Object filter + OOBB controls
+│   │   │   ├── OOBBOverlay.jsx         # 3D OOBB wireframe
+│   │   │   ├── RenderingPanel.jsx      # Camera management + render controls
+│   │   │   ├── CameraFrustum.jsx       # 3D camera pyramid visualization
+│   │   │   └── Toolbar.jsx             # Top toolbar with tabs + shading modes
+│   │   ├── utils/
+│   │   │   ├── objectDetection.js      # OOBB computation + culling
+│   │   │   └── sceneUpload.js          # Chunked GLB upload to backend
+│   │   └── styles/App.css
 │   ├── package.json
 │   ├── vite.config.js
-│   └── Dockerfile
-├── docker-compose.yml      # Development setup
-├── Dockerfile              # Production single-container
+│   └── Dockerfile.dev
+├── docs/                       # PORs, screenshots, sub-PORs
+├── docker-compose.yml          # Development setup (frontend + backend)
+├── Dockerfile                  # Production single-container
 └── README.md
 ```
 
 ## Development workflow
 
-- Start with Docker: `docker-compose up`
+- Start with Docker: `docker-compose up --build`
 - Frontend dev: `cd frontend && npm run dev`
 - Backend dev: `cd backend && python app.py`
 - Build production: `docker build -t room-connect .`

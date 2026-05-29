@@ -1,6 +1,19 @@
 import React, { useState } from "react";
 
-export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, onBrightnessChange }) {
+export default function RenderingPanel({
+  hasScene,
+  sceneFilename,
+  sceneFileId,
+  onBrightnessChange,
+  cameras,
+  selectedCameraId,
+  onPlaceCamera,
+  onSelectCamera,
+  onRealignCamera,
+  onDeleteCamera,
+  onClearAllCameras,
+  exportCameraData,
+}) {
   const [cameraCount, setCameraCount] = useState(10);
   const [renderWidth, setRenderWidth] = useState(1920);
   const [renderHeight, setRenderHeight] = useState(1080);
@@ -9,6 +22,7 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
   const [overrideLighting, setOverrideLighting] = useState(false);
   const [lightingBrightness, setLightingBrightness] = useState(1.5);
   const [includeBlend, setIncludeBlend] = useState(false);
+  const [exportIntrinsics, setExportIntrinsics] = useState(false);
   const [showDebugConsole, setShowDebugConsole] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [renderStatus, setRenderStatus] = useState("");
@@ -19,18 +33,18 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
     console.log("[Rendering] Will auto-generate", cameraCount, "camera positions");
   };
 
-  const handleManualPlace = () => {
-    console.log("[Rendering] Will enter manual camera placement mode");
-  };
-
   const handleRender = async () => {
     if (!sceneFileId) {
-      setRenderStatus("Scene not uploaded to backend yet. Please wait for upload to complete.");
+      setRenderStatus("Scene not uploaded to backend yet.");
+      return;
+    }
+    if (cameras.length === 0) {
+      setRenderStatus("No cameras placed. Use Place at View to add cameras.");
       return;
     }
 
     setIsRendering(true);
-    setRenderStatus("Rendering in progress...");
+    setRenderStatus(`Rendering ${cameras.length} view(s)...`);
     setRenderResults(null);
     setRenderLogs([]);
 
@@ -47,6 +61,13 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
           overrideLighting: overrideLighting,
           lightingBrightness: lightingBrightness,
           includeBlend: includeBlend,
+          cameras: cameras.map((c) => ({
+            id: c.id,
+            name: c.name,
+            position: c.position,
+            quaternion: c.quaternion,
+            fov: c.fov,
+          })),
         }),
       });
 
@@ -98,6 +119,19 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
     }
   };
 
+  const handleExportCameraData = () => {
+    if (exportCameraData) {
+      const data = exportCameraData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "camera_data.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  };
+
   return (
     <div className="side-panel">
       <h3>Rendering</h3>
@@ -123,10 +157,52 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
               <button className="btn btn-accent" onClick={handleAutoPlace}>
                 Auto-Place Cameras
               </button>
-              <button className="btn btn-toggle" onClick={handleManualPlace}>
-                Manual Place
+              <button className="btn btn-primary" onClick={onPlaceCamera}>
+                Place at View
               </button>
             </div>
+          </div>
+
+          {/* Camera list */}
+          <div className="panel-section">
+            <label className="panel-label">Cameras ({cameras.length})</label>
+            {cameras.length === 0 ? (
+              <p className="empty-state">No cameras placed. Navigate to desired view and click Place at View.</p>
+            ) : (
+              <>
+                <ul className="object-list">
+                  {cameras.map((cam) => (
+                    <li
+                      key={cam.id}
+                      className={`object-item ${cam.id === selectedCameraId ? "selected" : ""}`}
+                      onClick={() => onSelectCamera(cam.id)}
+                      onDoubleClick={() => onSelectCamera(cam.id, true)}
+                    >
+                      <span className="object-name">{cam.name}</span>
+                      <button
+                        className="btn-delete"
+                        onClick={(e) => { e.stopPropagation(); onDeleteCamera(cam.id); }}
+                        title="Delete camera"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {selectedCameraId && (
+                  <div className="panel-actions" style={{ marginTop: 8 }}>
+                    <button className="btn btn-toggle" onClick={onRealignCamera}>
+                      Realign to View
+                    </button>
+                  </div>
+                )}
+                <div className="panel-actions" style={{ marginTop: 8 }}>
+                  <button className="btn btn-toggle" onClick={onClearAllCameras}>
+                    Clear All
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="panel-section">
@@ -203,6 +279,14 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
             <label className="checkbox-row">
               <input
                 type="checkbox"
+                checked={exportIntrinsics}
+                onChange={(e) => setExportIntrinsics(e.target.checked)}
+              />
+              <span>Export camera intrinsics/extrinsics</span>
+            </label>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
                 checked={includeBlend}
                 onChange={(e) => setIncludeBlend(e.target.checked)}
               />
@@ -222,10 +306,15 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
             <button
               className="btn btn-primary"
               onClick={handleRender}
-              disabled={isRendering || !sceneFileId}
+              disabled={isRendering || !sceneFileId || cameras.length === 0}
             >
-              {isRendering ? "Rendering..." : "Render Views"}
+              {isRendering ? "Rendering..." : `Render Views (${cameras.length})`}
             </button>
+            {exportIntrinsics && cameras.length > 0 && (
+              <button className="btn btn-export" onClick={handleExportCameraData}>
+                Export Camera Data (JSON)
+              </button>
+            )}
           </div>
 
           {isRendering && (

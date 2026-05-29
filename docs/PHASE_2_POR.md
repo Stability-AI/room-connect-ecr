@@ -68,20 +68,23 @@ Port the existing Trimesh-based safe camera sampling to the chosen backend:
 - Generate look-at matrices targeting scene center at waist height
 - **Enhancement**: Add viewpoint entropy scoring — rank/filter views by how many labelled furniture items are visible (frustum + occlusion check)
 
-### Camera Modes
-- **Auto-generated**: Algorithm places cameras using the sampling logic above
-- **Manual**: User clicks in the 3D view to place camera markers, sets look-at target
+### Camera Modes — IMPLEMENTED
+- **Manual (Place at View)**: User navigates free-view camera, clicks "Place at View" to capture position/rotation as a render camera. Cameras shown as transparent pyramid frustums in 3D view. Double-click to switch to camera view, "Realign to View" to update, "Clear All" to remove all.
+- **Auto-generated**: Algorithm places cameras using sampling logic (pending implementation)
 
-### Backend Rendering (if chosen)
-- New Flask endpoint `POST /api/render` accepting scene data + camera poses
-- Backend loads geometry via Trimesh or BPY
-- Returns rendered image(s) as PNG/JPEG
-- Dockerfile updated with rendering dependencies (pyrender/trimesh or Blender)
+### Backend Rendering — IMPLEMENTED (Blender BPY + Cycles)
+- Decision: Use Blender BPY (Cycles renderer) via Docker
+- GLB uploaded to backend via chunked streaming (Option B, verified with 700MB files)
+- Flask SSE endpoint streams render logs in real-time to frontend debug console
+- Renders from ALL placed cameras (color PNG + optional 32-bit EXR depth map)
+- Materials rebuilt from glTF PBR data to match Three.js (selective repair for broken importer connections)
+- Override lighting: 6 area lights + bright world environment, controllable brightness slider
+- Output packaged as ZIP (optionally includes .blend file for inspection)
+- Camera intrinsics/extrinsics exportable as JSON
+- Y-up (Three.js) to Z-up (Blender) coordinate conversion for camera poses
 
-### Frontend Rendering (if chosen)
-- Use Three.js `WebGLRenderer` to capture views (`renderer.domElement.toDataURL()`)
-- No backend round-trip needed, but limited to rasterization (no path-tracing)
-- **Reference implementation**: [THREE.js-PathTracing-Renderer — glTF Viewer](https://erichlof.github.io/THREE.js-PathTracing-Renderer/GLTF_Model_Viewer.html) — use as starting point for client-side path-traced rendering of GLB scenes
+### Frontend Rendering (deferred)
+- **Reference implementation**: [THREE.js-PathTracing-Renderer — glTF Viewer](https://erichlof.github.io/THREE.js-PathTracing-Renderer/GLTF_Model_Viewer.html) — potential future client-side path-tracing option
 
 ---
 
@@ -108,24 +111,25 @@ flowchart LR
     end
 ```
 
-### Tab Descriptions
+### Tab Descriptions — IMPLEMENTED
 
 | Tab | 3D Overlay | Side Panel | Actions |
 |-----|-----------|-----------|---------|
 | Volume Connectivity (default) | Volumes + handles | Volume list | Draw, edit, export graph JSON |
-| Object Detection | OOBBs around filtered objects | Search input + object list | Filter, toggle OOBBs, export object JSON |
-| Rendering | Camera markers + frustum previews | Camera list + render settings | Place cameras, generate views, download renders |
+| Object Detection | OOBBs around filtered objects | Search input + object list + cull slider | Filter, toggle/cull OOBBs, export object JSON |
+| Rendering | Camera frustum pyramids | Camera list + render settings + debug console | Place/realign/clear cameras, render all views, export ZIP + camera JSON |
 
-### Implementation
-- Add a `activeTab` state in `App.jsx` with values: `"connectivity"`, `"detection"`, `"rendering"`
-- Tab buttons in the toolbar switch the active tab
-- The 3D canvas is shared; overlays change based on active tab
-- The right side panel renders different content per tab
-- New components:
-  - `frontend/src/components/ObjectDetection.jsx` — filter UI + object list
-  - `frontend/src/components/RenderingPanel.jsx` — camera controls + render triggers
-  - `frontend/src/components/OOBBOverlay.jsx` — 3D OOBB wireframe display
-  - `frontend/src/components/CameraMarker.jsx` — 3D camera frustum preview
+### Shading Modes — IMPLEMENTED
+5 modes in toolbar: Normals, Wireframe, Diffuse, Texture (unlit albedo), Shaded (PBR + studio lighting +15%)
+
+### Implementation — COMPLETE
+- `activeTab` state with `"connectivity"`, `"detection"`, `"rendering"`
+- Shared 3D canvas; overlays toggle per active tab
+- Components implemented:
+  - `ObjectDetectionPanel.jsx` — filter UI, include/exclude mode, cull sensitivity dialog
+  - `RenderingPanel.jsx` — camera placement, render settings, SSE log console, brightness slider
+  - `OOBBOverlay.jsx` — 3D OOBB wireframe display
+  - `CameraFrustum.jsx` — 3D transparent pyramid frustum visualization
 
 ---
 

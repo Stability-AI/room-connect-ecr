@@ -528,6 +528,80 @@ class CyclesRenderer:
         results["logs"] = self.log_buffer
         return results
 
+    def render_all_views(self, cameras: list, generate_depthmap: bool = False, override_lighting: bool = False, lighting_brightness: float = 1.5, include_blend: bool = False) -> dict:
+        """
+        Render from multiple camera positions.
+        Each camera dict has: id, name, position, quaternion, fov.
+        """
+        self.log_buffer = []
+        self._ensure_lighting(override_lighting=override_lighting, brightness=lighting_brightness)
+
+        results = {"files": [], "logs": []}
+        total = len(cameras)
+
+        from mathutils import Quaternion as MQuaternion, Vector, Matrix
+        import math
+
+        # Rotation to convert from Three.js Y-up to Blender Z-up: 90° around X
+        yup_to_zup = MQuaternion((math.cos(math.pi / 4), math.sin(math.pi / 4), 0, 0))
+
+        for idx, cam_data in enumerate(cameras):
+            cam_name = cam_data.get("name", f"Camera_{idx}")
+            self._capture_log(f"Rendering view {idx + 1}/{total}: {cam_name}")
+
+            bpy.ops.object.camera_add()
+            cam_obj = bpy.context.object
+            cam_obj.name = f"RenderCam_{idx}"
+            cam_obj.data.angle = (cam_data.get("fov", 49.13) * 3.14159265) / 180.0
+            cam_obj.data.clip_start = 0.1
+            cam_obj.data.clip_end = 10000
+
+            # Convert position from Y-up (Three.js) to Z-up (Blender)
+            pos = cam_data["position"]
+            cam_obj.location = (pos[0], -pos[2], pos[1])
+
+            # Convert quaternion from Three.js (XYZW, Y-up) to Blender (WXYZ, Z-up)
+            q = cam_data["quaternion"]
+            threejs_quat = MQuaternion((q[3], q[0], q[1], q[2]))  # Convert XYZW to WXYZ
+            blender_quat = yup_to_zup @ threejs_quat
+            cam_obj.rotation_mode = "QUATERNION"
+            cam_obj.rotation_quaternion = blender_quat
+
+            bpy.context.scene.camera = cam_obj
+
+            # Render color pass
+            self.configure_render_settings()
+            color_filename = f"render_{cam_name}_{self.render_id}.png"
+            color_path = str(self.output_dir / color_filename)
+            bpy.context.scene.render.filepath = color_path
+            bpy.ops.render.render(write_still=True)
+            results["files"].append({"type": "color", "path": color_path, "filename": color_filename})
+            self._capture_log(f"  Color saved: {color_filename}")
+
+            # Render depth pass
+            if generate_depthmap:
+                self.configure_depthmap_settings()
+                depth_filename = f"depth_{cam_name}_{self.render_id}.exr"
+                depth_path = str(self.output_dir / depth_filename)
+                bpy.context.scene.render.filepath = depth_path
+                bpy.ops.render.render(write_still=True)
+                results["files"].append({"type": "depth", "path": depth_path, "filename": depth_filename})
+                self._capture_log(f"  Depth saved: {depth_filename}")
+
+            # Clean up camera object
+            bpy.data.objects.remove(cam_obj, do_unlink=True)
+
+        # Save .blend file if requested
+        if include_blend:
+            blend_path = str(self.output_dir / f"scene_{self.render_id}.blend")
+            bpy.ops.wm.save_as_mainfile(filepath=blend_path)
+            results["files"].append({"type": "blend", "path": blend_path, "filename": f"scene_{self.render_id}.blend"})
+            self._capture_log(f"Blender scene saved: {blend_path}")
+
+        self._capture_log(f"Completed {total} views")
+        results["logs"] = self.log_buffer
+        return results
+
     def create_zip(self, results: dict) -> str:
         """Package all rendered files into a zip archive."""
         zip_path = str(self.output_dir / f"renders_{self.render_id}.zip")

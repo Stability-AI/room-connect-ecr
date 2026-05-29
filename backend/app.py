@@ -171,6 +171,7 @@ def render_scene():
     override_lighting = bool(data.get("overrideLighting", False))
     lighting_brightness = float(data.get("lightingBrightness", 1.5))
     include_blend = bool(data.get("includeBlend", False))
+    camera_list = data.get("cameras", [])
 
     logger.info(
         f"Render request: {scene_path.name}, {width}x{height}, {samples} samples, "
@@ -195,12 +196,21 @@ def render_scene():
                 log_queue.put(("error", json.dumps({"error": "Failed to load scene"})))
                 return
 
-            results = renderer.render_single_view(
-                generate_depthmap=generate_depthmap,
-                override_lighting=override_lighting,
-                lighting_brightness=lighting_brightness,
-                include_blend=include_blend,
-            )
+            if camera_list:
+                results = renderer.render_all_views(
+                    cameras=camera_list,
+                    generate_depthmap=generate_depthmap,
+                    override_lighting=override_lighting,
+                    lighting_brightness=lighting_brightness,
+                    include_blend=include_blend,
+                )
+            else:
+                results = renderer.render_single_view(
+                    generate_depthmap=generate_depthmap,
+                    override_lighting=override_lighting,
+                    lighting_brightness=lighting_brightness,
+                    include_blend=include_blend,
+                )
 
             zip_path = renderer.create_zip(results)
             zip_filename = Path(zip_path).name

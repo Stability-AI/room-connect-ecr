@@ -576,6 +576,15 @@ body {
   border-bottom: none;
 }
 
+.object-item.selected {
+  background: rgba(63, 185, 80, 0.08);
+  border-color: var(--accent-green);
+}
+
+.object-item:hover {
+  background: rgba(88, 166, 255, 0.05);
+}
+
 .object-name {
   color: var(--text-primary);
   font-weight: 500;

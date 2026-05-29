@@ -7,6 +7,7 @@ import VolumeBox from "./VolumeBox";
 import DrawingVolume from "./DrawingVolume";
 import EditingVolume from "./EditingVolume";
 import OOBBOverlay from "./OOBBOverlay";
+import CameraFrustum from "./CameraFrustum";
 
 const worldNormalMaterial = new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
@@ -198,6 +199,32 @@ function CameraController({ orthographic }) {
   return null;
 }
 
+function CameraRefExposer({ onCameraRef }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    if (onCameraRef) onCameraRef(camera);
+  }, [camera, onCameraRef]);
+  useFrame(() => {
+    if (onCameraRef) onCameraRef(camera);
+  });
+  return null;
+}
+
+function CameraViewSwitcher({ activeCameraView }) {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    if (!activeCameraView) return;
+
+    const { position, quaternion } = activeCameraView;
+    camera.position.set(position[0], position[1], position[2]);
+    const q = new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
+    camera.quaternion.copy(q);
+  }, [activeCameraView, camera]);
+
+  return null;
+}
+
 function GroundPlane() {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
@@ -222,6 +249,11 @@ export default function SceneViewer({
   detectedObjects,
   showOOBBs,
   lightingBrightness = 1.5,
+  cameras = [],
+  selectedCameraId,
+  activeCameraView,
+  onCameraRef,
+  onSelectCamera,
 }) {
   const [sceneHasLights, setSceneHasLights] = useState(false);
   const sceneObjRef = useRef(null);
@@ -259,6 +291,18 @@ export default function SceneViewer({
         <SceneLightsDetector scene={sceneObjRef.current} onHasLights={setSceneHasLights} />
 
         {needsLighting && <StudioLighting brightness={lightingBrightness} />}
+
+        <CameraRefExposer onCameraRef={onCameraRef} />
+        {activeCameraView && <CameraViewSwitcher activeCameraView={activeCameraView} />}
+
+        {cameras.map((cam) => (
+          <CameraFrustum
+            key={cam.id}
+            camera={cam}
+            isSelected={cam.id === selectedCameraId}
+            onDoubleClick={() => onSelectCamera && onSelectCamera(cam.id, true)}
+          />
+        ))}
 
         <GroundPlane />
 

@@ -7,6 +7,8 @@ import ObjectDetectionPanel from "./components/ObjectDetectionPanel";
 import RenderingPanel from "./components/RenderingPanel";
 import { detectObjects, cullOverlappingOOBBs } from "./utils/objectDetection";
 import { uploadSceneChunked } from "./utils/sceneUpload";
+import { v4 as uuidv4 } from "uuid";
+import { BLENDER_FOV } from "./components/CameraFrustum";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("connectivity");
@@ -29,6 +31,12 @@ export default function App() {
   // Backend upload state
   const [sceneFileId, setSceneFileId] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(null);
+
+  // Camera management state
+  const [cameras, setCameras] = useState([]);
+  const [selectedCameraId, setSelectedCameraId] = useState(null);
+  const [activeCameraView, setActiveCameraView] = useState(null);
+  const viewCameraRef = useRef(null); // ref to get current Three.js camera state
 
   const handleFileLoad = useCallback((file) => {
     if (sceneUrl && sceneUrl.startsWith("blob:")) {
@@ -193,7 +201,87 @@ export default function App() {
     setActiveTab(tab);
     setIsDrawing(false);
     setEditingVolumeId(null);
+    setActiveCameraView(null);
   }, []);
+
+  // Camera management
+  const handlePlaceCamera = useCallback(() => {
+    if (!viewCameraRef.current) return;
+    const cam = viewCameraRef.current;
+    const newCamera = {
+      id: uuidv4(),
+      name: `Camera ${cameras.length + 1}`,
+      position: [cam.position.x, cam.position.y, cam.position.z],
+      quaternion: [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w],
+      fov: BLENDER_FOV,
+    };
+    setCameras((prev) => [...prev, newCamera]);
+    setSelectedCameraId(newCamera.id);
+  }, [cameras.length]);
+
+  const handleSelectCamera = useCallback((id, switchView = false) => {
+    setSelectedCameraId(id);
+    if (switchView) {
+      const cam = cameras.find((c) => c.id === id);
+      if (cam) setActiveCameraView(cam);
+    }
+  }, [cameras]);
+
+  const handleRealignCamera = useCallback(() => {
+    if (!selectedCameraId || !viewCameraRef.current) return;
+    const cam = viewCameraRef.current;
+    setCameras((prev) =>
+      prev.map((c) =>
+        c.id === selectedCameraId
+          ? {
+              ...c,
+              position: [cam.position.x, cam.position.y, cam.position.z],
+              quaternion: [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w],
+            }
+          : c
+      )
+    );
+    setActiveCameraView(null);
+  }, [selectedCameraId]);
+
+  const handleDeleteCamera = useCallback((id) => {
+    setCameras((prev) => prev.filter((c) => c.id !== id));
+    if (selectedCameraId === id) {
+      setSelectedCameraId(null);
+      setActiveCameraView(null);
+    }
+  }, [selectedCameraId]);
+
+  const handleClearAllCameras = useCallback(() => {
+    setCameras([]);
+    setSelectedCameraId(null);
+    setActiveCameraView(null);
+  }, []);
+
+  const getCameraExportData = useCallback(() => {
+    const aspect = 16 / 9;
+    const fovRad = (BLENDER_FOV * Math.PI) / 180;
+    const fy = renderHeight => 1080 / (2 * Math.tan(fovRad / 2));
+    const fx = fy;
+
+    return {
+      cameras: cameras.map((cam) => ({
+        id: cam.id,
+        name: cam.name,
+        intrinsics: {
+          fov_degrees: cam.fov,
+          fov_radians: (cam.fov * Math.PI) / 180,
+          aspect_ratio: aspect,
+          focal_length_px: { fx: 1080 / (2 * Math.tan(fovRad / 2)), fy: 1080 / (2 * Math.tan(fovRad / 2)) },
+          principal_point: { cx: 960, cy: 540 },
+        },
+        extrinsics: {
+          position: cam.position,
+          quaternion_xyzw: cam.quaternion,
+        },
+      })),
+    };
+  }, [cameras]);
 
   const renderSidePanel = () => {
     switch (activeTab) {
@@ -227,6 +315,14 @@ export default function App() {
             sceneFilename={sceneFilename}
             sceneFileId={sceneFileId}
             onBrightnessChange={setLightingBrightness}
+            cameras={cameras}
+            selectedCameraId={selectedCameraId}
+            onPlaceCamera={handlePlaceCamera}
+            onSelectCamera={handleSelectCamera}
+            onRealignCamera={handleRealignCamera}
+            onDeleteCamera={handleDeleteCamera}
+            onClearAllCameras={handleClearAllCameras}
+            exportCameraData={getCameraExportData}
           />
         );
       default:
@@ -266,6 +362,11 @@ export default function App() {
           detectedObjects={activeTab === "detection" ? detectedObjects : []}
           showOOBBs={showOOBBs}
           lightingBrightness={lightingBrightness}
+          cameras={activeTab === "rendering" ? cameras : []}
+          selectedCameraId={selectedCameraId}
+          activeCameraView={activeCameraView}
+          onCameraRef={(ref) => { viewCameraRef.current = ref; }}
+          onSelectCamera={handleSelectCamera}
         />
         {renderSidePanel()}
       </div>
