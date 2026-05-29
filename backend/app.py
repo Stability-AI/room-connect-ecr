@@ -3,10 +3,13 @@ and provides Blender Cycles rendering via bpy."""
 
 import os
 import uuid
+import json
 import logging
+import threading
+import queue
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory, send_file
+from flask import Flask, jsonify, request, send_from_directory, send_file, Response, stream_with_context
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
@@ -142,16 +145,8 @@ def serve_scene(filename: str):
 @app.route("/api/render", methods=["POST"])
 def render_scene():
     """
-    Render a single view of the uploaded GLB scene using Blender Cycles.
-
-    Expects JSON body:
-    {
-        "sceneId": "<file_id>_<filename>",
-        "width": 1920,
-        "height": 1080,
-        "samples": 128,
-        "generateDepthmap": false
-    }
+    Render via SSE: streams log lines as they happen, then sends a final
+    JSON result event with zip URL and output paths.
     """
     data = request.get_json()
     if not data:
@@ -163,7 +158,6 @@ def render_scene():
 
     scene_path = UPLOAD_DIR / scene_id
     if not scene_path.exists():
-        # Try to find by pattern
         matches = list(UPLOAD_DIR.glob(f"*{scene_id}*"))
         if matches:
             scene_path = matches[0]
@@ -174,44 +168,90 @@ def render_scene():
     height = int(data.get("height", 1080))
     samples = int(data.get("samples", 128))
     generate_depthmap = bool(data.get("generateDepthmap", False))
+    override_lighting = bool(data.get("overrideLighting", False))
+    lighting_brightness = float(data.get("lightingBrightness", 1.5))
+    include_blend = bool(data.get("includeBlend", False))
 
-    logger.info(f"Render request: {scene_path.name}, {width}x{height}, {samples} samples, depth={generate_depthmap}")
+    logger.info(
+        f"Render request: {scene_path.name}, {width}x{height}, {samples} samples, "
+        f"depth={generate_depthmap}, override_lighting={override_lighting}"
+    )
 
-    try:
-        from rendering.cycles_renderer import CyclesRenderer
+    log_queue = queue.Queue()
 
-        renderer = CyclesRenderer(
-            output_dir=str(RENDER_DIR),
-            render_resolution_x=width,
-            render_resolution_y=height,
-            rendering_samples=samples,
-        )
+    def run_render():
+        try:
+            from rendering.cycles_renderer import CyclesRenderer
 
-        if not renderer.load_scene(str(scene_path)):
-            return jsonify({"error": "Failed to load scene"}), 500
+            renderer = CyclesRenderer(
+                output_dir=str(RENDER_DIR),
+                render_resolution_x=width,
+                render_resolution_y=height,
+                rendering_samples=samples,
+                log_queue=log_queue,
+            )
 
-        results = renderer.render_single_view(generate_depthmap=generate_depthmap)
+            if not renderer.load_scene(str(scene_path)):
+                log_queue.put(("error", json.dumps({"error": "Failed to load scene"})))
+                return
 
-        response = {"success": True, "outputs": {}}
+            results = renderer.render_single_view(
+                generate_depthmap=generate_depthmap,
+                override_lighting=override_lighting,
+                lighting_brightness=lighting_brightness,
+                include_blend=include_blend,
+            )
 
-        if "color" in results:
-            color_filename = Path(results["color"]).name
-            response["outputs"]["color"] = f"/api/renders/{color_filename}"
+            zip_path = renderer.create_zip(results)
+            zip_filename = Path(zip_path).name
 
-        if "depth" in results:
-            depth_filename = Path(results["depth"]).name
-            response["outputs"]["depth"] = f"/api/renders/{depth_filename}"
+            response = {
+                "success": True,
+                "zip": f"/api/renders/{zip_filename}",
+                "outputs": {},
+            }
+            for file_info in results["files"]:
+                response["outputs"][file_info["type"]] = f"/api/renders/{file_info['filename']}"
 
-        return jsonify(response)
+            log_queue.put(("result", json.dumps(response)))
 
-    except Exception as e:
-        logger.exception("Render failed")
-        return jsonify({"error": str(e)}), 500
+        except Exception as e:
+            logger.exception("Render failed")
+            log_queue.put(("error", json.dumps({"error": str(e)})))
+
+    def generate():
+        render_thread = threading.Thread(target=run_render, daemon=True)
+        render_thread.start()
+
+        while True:
+            try:
+                event_type, data = log_queue.get(timeout=1.0)
+            except queue.Empty:
+                if not render_thread.is_alive():
+                    break
+                yield f"event: ping\ndata: alive\n\n"
+                continue
+
+            yield f"event: {event_type}\ndata: {data}\n\n"
+
+            if event_type in ("result", "error"):
+                break
+
+        render_thread.join(timeout=5)
+
+    return Response(
+        stream_with_context(generate()),
+        content_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.route("/api/renders/<filename>")
 def serve_render(filename: str):
-    """Serve a rendered image."""
+    """Serve a rendered image or zip archive."""
     return send_from_directory(str(RENDER_DIR), filename)
 
 

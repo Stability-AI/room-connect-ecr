@@ -1,17 +1,22 @@
 import React, { useState } from "react";
 
-export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, onRenderComplete }) {
+export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, onBrightnessChange }) {
   const [cameraCount, setCameraCount] = useState(10);
   const [renderWidth, setRenderWidth] = useState(1920);
   const [renderHeight, setRenderHeight] = useState(1080);
   const [samples, setSamples] = useState(128);
   const [generateDepthmap, setGenerateDepthmap] = useState(false);
+  const [overrideLighting, setOverrideLighting] = useState(false);
+  const [lightingBrightness, setLightingBrightness] = useState(1.5);
+  const [includeBlend, setIncludeBlend] = useState(false);
+  const [showDebugConsole, setShowDebugConsole] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [renderStatus, setRenderStatus] = useState("");
+  const [renderLogs, setRenderLogs] = useState([]);
   const [renderResults, setRenderResults] = useState(null);
 
   const handleAutoPlace = () => {
-    console.log("[Rendering] Will auto-generate", cameraCount, "camera positions using safe sampling algorithm");
+    console.log("[Rendering] Will auto-generate", cameraCount, "camera positions");
   };
 
   const handleManualPlace = () => {
@@ -25,8 +30,9 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
     }
 
     setIsRendering(true);
-    setRenderStatus("Rendering...");
+    setRenderStatus("Rendering in progress...");
     setRenderResults(null);
+    setRenderLogs([]);
 
     try {
       const response = await fetch("/api/render", {
@@ -38,19 +44,44 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
           height: renderHeight,
           samples: samples,
           generateDepthmap: generateDepthmap,
+          overrideLighting: overrideLighting,
+          lightingBrightness: lightingBrightness,
+          includeBlend: includeBlend,
         }),
       });
 
-      const data = await response.json();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      if (!response.ok) {
-        setRenderStatus(`Render failed: ${data.error || "Unknown error"}`);
-        return;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        let eventType = null;
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            const data = line.slice(6);
+            if (eventType === "log") {
+              setRenderLogs((prev) => [...prev, data]);
+            } else if (eventType === "result") {
+              const result = JSON.parse(data);
+              setRenderResults(result);
+              setRenderStatus("Render complete!");
+            } else if (eventType === "error") {
+              const err = JSON.parse(data);
+              setRenderStatus(`Render failed: ${err.error}`);
+            }
+            eventType = null;
+          }
+        }
       }
-
-      setRenderResults(data.outputs);
-      setRenderStatus("Render complete!");
-      if (onRenderComplete) onRenderComplete(data.outputs);
     } catch (err) {
       setRenderStatus(`Render failed: ${err.message}`);
     } finally {
@@ -58,11 +89,13 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
     }
   };
 
-  const handleDownload = (url, filename) => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
+  const handleDownloadZip = () => {
+    if (renderResults && renderResults.zip) {
+      const a = document.createElement("a");
+      a.href = renderResults.zip;
+      a.download = "renders.zip";
+      a.click();
+    }
   };
 
   return (
@@ -138,6 +171,51 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
               />
               <span>Generate depthmaps</span>
             </label>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={overrideLighting}
+                onChange={(e) => setOverrideLighting(e.target.checked)}
+              />
+              <span>Override lighting</span>
+            </label>
+            {overrideLighting && (
+              <div className="panel-row" style={{ marginTop: 8 }}>
+                <label className="panel-sublabel">Brightness</label>
+                <input
+                  type="range"
+                  className="cull-slider"
+                  min="0.5"
+                  max="4.0"
+                  step="0.1"
+                  value={lightingBrightness}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setLightingBrightness(val);
+                    if (onBrightnessChange) onBrightnessChange(val);
+                  }}
+                />
+                <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", minWidth: 30 }}>
+                  {lightingBrightness.toFixed(1)}x
+                </span>
+              </div>
+            )}
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={includeBlend}
+                onChange={(e) => setIncludeBlend(e.target.checked)}
+              />
+              <span>Include .blend file in download</span>
+            </label>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={showDebugConsole}
+                onChange={(e) => setShowDebugConsole(e.target.checked)}
+              />
+              <span>Show debug console</span>
+            </label>
           </div>
 
           <div className="panel-actions">
@@ -150,7 +228,16 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
             </button>
           </div>
 
-          {renderStatus && (
+          {isRendering && (
+            <div className="panel-section">
+              <div className="barber-pole-container">
+                <div className="barber-pole" />
+              </div>
+              <p className="render-status">{renderStatus}</p>
+            </div>
+          )}
+
+          {!isRendering && renderStatus && (
             <div className="panel-section">
               <p className={`render-status ${renderResults ? "success" : ""}`}>
                 {renderStatus}
@@ -162,26 +249,30 @@ export default function RenderingPanel({ hasScene, sceneFilename, sceneFileId, o
             <div className="panel-section">
               <label className="panel-label">Output</label>
               <div className="panel-actions">
-                {renderResults.color && (
-                  <button
-                    className="btn btn-export"
-                    onClick={() => handleDownload(renderResults.color, "render.png")}
-                  >
-                    Download Render (PNG)
-                  </button>
-                )}
-                {renderResults.depth && (
-                  <button
-                    className="btn btn-export"
-                    onClick={() => handleDownload(renderResults.depth, "depth.exr")}
-                  >
-                    Download Depth (EXR)
-                  </button>
-                )}
+                <button className="btn btn-export" onClick={handleDownloadZip}>
+                  Download All (ZIP)
+                </button>
               </div>
             </div>
           )}
         </>
+      )}
+
+      {showDebugConsole && (
+        <div className="debug-console">
+          <div className="debug-console-header">
+            <span>Blender Render Log</span>
+          </div>
+          <div className="debug-console-body">
+            {renderLogs.length === 0 ? (
+              <span className="debug-empty">No render logs yet. Click Render Views to start.</span>
+            ) : (
+              renderLogs.map((line, i) => (
+                <div key={i} className="debug-line">{line}</div>
+              ))
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

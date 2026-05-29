@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM --platform=linux/amd64 python:3.11-slim
 
 WORKDIR /app
 
@@ -8,7 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxxf86vm1 \
     libxfixes3 \
     libxrender1 \
-    libgl1-mesa-glx \
+    libgl1 \
+    libglx-mesa0 \
+    libegl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \

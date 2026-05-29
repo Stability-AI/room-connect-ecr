@@ -10,7 +10,8 @@ const SHADING_MODES = [
   { id: "normals", label: "Normals" },
   { id: "wireframe", label: "Wireframe" },
   { id: "diffuse", label: "Diffuse" },
-  { id: "textured", label: "Textured" },
+  { id: "texture", label: "Texture" },
+  { id: "shaded", label: "Shaded" },
 ];
 
 export default function Toolbar({

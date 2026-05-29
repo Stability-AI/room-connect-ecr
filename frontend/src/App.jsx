@@ -17,8 +17,9 @@ export default function App() {
   const [pendingVolume, setPendingVolume] = useState(null);
   const [selectedVolumeId, setSelectedVolumeId] = useState(null);
   const [editingVolumeId, setEditingVolumeId] = useState(null);
-  const [shadingMode, setShadingMode] = useState("normals"); // normals | wireframe | diffuse | textured
+  const [shadingMode, setShadingMode] = useState("normals"); // normals | wireframe | diffuse | texture | shaded
   const [orthographic, setOrthographic] = useState(false);
+  const [lightingBrightness, setLightingBrightness] = useState(1.5);
 
   // Object detection state
   const [detectedObjects, setDetectedObjects] = useState([]);
@@ -225,6 +226,7 @@ export default function App() {
             hasScene={!!sceneUrl}
             sceneFilename={sceneFilename}
             sceneFileId={sceneFileId}
+            onBrightnessChange={setLightingBrightness}
           />
         );
       default:
@@ -263,6 +265,7 @@ export default function App() {
           onSceneReady={handleSceneReady}
           detectedObjects={activeTab === "detection" ? detectedObjects : []}
           showOOBBs={showOOBBs}
+          lightingBrightness={lightingBrightness}
         />
         {renderSidePanel()}
       </div>

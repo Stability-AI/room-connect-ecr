@@ -48,6 +48,8 @@ const diffuseMaterial = new THREE.MeshStandardMaterial({
   side: THREE.DoubleSide,
 });
 
+const texturUnlitMaterial = null; // placeholder — handled per-mesh below
+
 function SceneModel({ url, shadingMode, onSceneReady }) {
   const { scene } = useGLTF(url);
   const originalMaterials = useRef(new Map());
@@ -78,7 +80,27 @@ function SceneModel({ url, shadingMode, onSceneReady }) {
           case "diffuse":
             child.material = diffuseMaterial;
             break;
-          case "textured": {
+          case "texture": {
+            // Unlit albedo — show all texture maps without lighting
+            const orig = originalMaterials.current.get(child.uuid);
+            if (orig) {
+              const unlitMat = new THREE.MeshBasicMaterial({
+                side: THREE.DoubleSide,
+              });
+              // Copy all relevant texture properties from the original material
+              if (orig.map) unlitMat.map = orig.map;
+              if (orig.color) unlitMat.color = orig.color.clone();
+              if (orig.alphaMap) unlitMat.alphaMap = orig.alphaMap;
+              if (orig.aoMap) unlitMat.aoMap = orig.aoMap;
+              if (orig.transparent) unlitMat.transparent = orig.transparent;
+              if (orig.opacity !== undefined) unlitMat.opacity = orig.opacity;
+              if (!orig.map && !orig.color) unlitMat.color = new THREE.Color(0xcccccc);
+              child.material = unlitMat;
+            }
+            break;
+          }
+          case "shaded": {
+            // Full PBR materials with studio lighting
             const orig = originalMaterials.current.get(child.uuid);
             if (orig) {
               child.material = orig;
@@ -86,6 +108,10 @@ function SceneModel({ url, shadingMode, onSceneReady }) {
             break;
           }
         }
+      }
+      // Hide GLB lights from the real-time preview — we use our own studio lighting
+      if (child.isLight) {
+        child.visible = false;
       }
     });
   }, [scene, shadingMode]);
@@ -99,27 +125,28 @@ function SceneModel({ url, shadingMode, onSceneReady }) {
   return <primitive object={scene} />;
 }
 
-function StudioLighting() {
+function StudioLighting({ brightness }) {
+  const m = brightness || 1.0;
   return (
     <>
-      <ambientLight intensity={0.5} color={0xffffff} />
+      <ambientLight intensity={0.5 * m} color={0xffffff} />
       <hemisphereLight
-        args={[0xddeeff, 0x223344, 1.0]}
+        args={[0xddeeff, 0x223344, 1.0 * m]}
         position={[0, 50, 0]}
       />
       <directionalLight
         color={0xffffff}
-        intensity={0.8}
+        intensity={0.8 * m}
         position={[30, 50, 20]}
       />
       <directionalLight
         color={0xeeeeff}
-        intensity={0.4}
+        intensity={0.5 * m}
         position={[-20, 40, -30]}
       />
       <directionalLight
         color={0xffeedd}
-        intensity={0.3}
+        intensity={0.4 * m}
         position={[0, 30, -40]}
       />
     </>
@@ -194,6 +221,7 @@ export default function SceneViewer({
   onSceneReady,
   detectedObjects,
   showOOBBs,
+  lightingBrightness = 1.5,
 }) {
   const [sceneHasLights, setSceneHasLights] = useState(false);
   const sceneObjRef = useRef(null);
@@ -203,7 +231,7 @@ export default function SceneViewer({
     if (onSceneReady) onSceneReady(scene);
   }, [onSceneReady]);
 
-  const needsLighting = shadingMode === "diffuse" || (shadingMode === "textured" && !sceneHasLights);
+  const needsLighting = shadingMode === "diffuse" || shadingMode === "shaded";
 
   return (
     <div className="scene-viewer">
@@ -211,7 +239,7 @@ export default function SceneViewer({
         camera={{ position: [5, 5, 5], fov: 60, near: 0.1, far: 10000 }}
         gl={{
           antialias: true,
-          toneMapping: (shadingMode === "diffuse" || shadingMode === "textured")
+          toneMapping: (shadingMode === "diffuse" || shadingMode === "shaded")
             ? THREE.ACESFilmicToneMapping
             : THREE.NoToneMapping,
           logarithmicDepthBuffer: true,
@@ -230,7 +258,7 @@ export default function SceneViewer({
 
         <SceneLightsDetector scene={sceneObjRef.current} onHasLights={setSceneHasLights} />
 
-        {needsLighting && <StudioLighting />}
+        {needsLighting && <StudioLighting brightness={lightingBrightness} />}
 
         <GroundPlane />
 
