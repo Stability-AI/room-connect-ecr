@@ -145,7 +145,9 @@ If running locally (not in Docker), the backend can simply accept the file path 
 
 ---
 
-## Recommendation
+## Decision: Option B (Chunked Streaming Upload)
+
+**SELECTED** — Use Option B for GLB scene file transfer between the frontend and backend.
 
 For this project (local Docker deployment, single user):
 
