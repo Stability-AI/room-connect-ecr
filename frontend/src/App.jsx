@@ -5,7 +5,7 @@ import VolumeList from "./components/VolumeList";
 import VolumeDialog from "./components/VolumeDialog";
 import ObjectDetectionPanel from "./components/ObjectDetectionPanel";
 import RenderingPanel from "./components/RenderingPanel";
-import { detectObjects } from "./utils/objectDetection";
+import { detectObjects, cullOverlappingOOBBs } from "./utils/objectDetection";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("connectivity");
@@ -49,6 +49,15 @@ export default function App() {
 
   const handleToggleOOBBs = useCallback(() => {
     setShowOOBBs((prev) => !prev);
+  }, []);
+
+  const handleClearObjects = useCallback(() => {
+    setDetectedObjects([]);
+    setShowOOBBs(false);
+  }, []);
+
+  const handleCullSelection = useCallback((threshold) => {
+    setDetectedObjects((prev) => cullOverlappingOOBBs(prev, threshold));
   }, []);
 
   const handleExportObjects = useCallback(() => {
@@ -183,6 +192,8 @@ export default function App() {
             sceneFilename={sceneFilename}
             onDetect={handleDetectObjects}
             onToggleOOBBs={handleToggleOOBBs}
+            onClear={handleClearObjects}
+            onCull={handleCullSelection}
             onExport={handleExportObjects}
             detectedObjects={detectedObjects}
             showOOBBs={showOOBBs}

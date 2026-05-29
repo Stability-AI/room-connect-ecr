@@ -2,14 +2,11 @@ import React, { useRef, useState, useCallback, useEffect, useMemo } from "react"
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls, useGLTF, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import * as THREE from "three";
-import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import { v4 as uuidv4 } from "uuid";
 import VolumeBox from "./VolumeBox";
 import DrawingVolume from "./DrawingVolume";
 import EditingVolume from "./EditingVolume";
 import OOBBOverlay from "./OOBBOverlay";
-
-RectAreaLightUniformsLib.init();
 
 const worldNormalMaterial = new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
@@ -103,35 +100,27 @@ function SceneModel({ url, shadingMode, onSceneReady }) {
 }
 
 function StudioLighting() {
-  const rectLightRef = useRef();
-
-  useEffect(() => {
-    if (rectLightRef.current) {
-      rectLightRef.current.lookAt(0, 0, 0);
-    }
-  }, []);
-
   return (
     <>
-      <ambientLight intensity={0.1} color={0xffffff} />
+      <ambientLight intensity={0.5} color={0xffffff} />
       <hemisphereLight
-        args={[0xddeeff, 0x0f1115, 0.6]}
+        args={[0xddeeff, 0x223344, 1.0]}
         position={[0, 50, 0]}
       />
-      <rectAreaLight
-        ref={rectLightRef}
-        args={[0xffffff, 20.0, 10, 5]}
-        position={[0, 5, -10]}
+      <directionalLight
+        color={0xffffff}
+        intensity={0.8}
+        position={[30, 50, 20]}
       />
-      <rectAreaLight
-        args={[0xffffff, 10.0, 8, 4]}
-        position={[10, 4, 5]}
-        rotation={[0, -Math.PI / 3, 0]}
+      <directionalLight
+        color={0xeeeeff}
+        intensity={0.4}
+        position={[-20, 40, -30]}
       />
-      <rectAreaLight
-        args={[0xffffff, 5.0, 6, 3]}
-        position={[-8, 3, 8]}
-        rotation={[0, Math.PI / 4, 0]}
+      <directionalLight
+        color={0xffeedd}
+        intensity={0.3}
+        position={[0, 30, -40]}
       />
     </>
   );

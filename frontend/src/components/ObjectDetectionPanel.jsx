@@ -5,12 +5,16 @@ export default function ObjectDetectionPanel({
   sceneFilename,
   onDetect,
   onToggleOOBBs,
+  onClear,
+  onCull,
   onExport,
   detectedObjects,
   showOOBBs,
 }) {
   const [filterTerms, setFilterTerms] = useState("");
   const [exclusive, setExclusive] = useState(false);
+  const [showCullDialog, setShowCullDialog] = useState(false);
+  const [cullThreshold, setCullThreshold] = useState(0.5);
 
   const handleDetect = () => {
     if (!filterTerms.trim()) return;
@@ -21,6 +25,11 @@ export default function ObjectDetectionPanel({
     if (e.key === "Enter") {
       handleDetect();
     }
+  };
+
+  const handleCullConfirm = () => {
+    onCull(cullThreshold);
+    setShowCullDialog(false);
   };
 
   return (
@@ -91,6 +100,20 @@ export default function ObjectDetectionPanel({
             >
               Export Objects (JSON)
             </button>
+            <button
+              className="btn btn-toggle"
+              onClick={() => setShowCullDialog(true)}
+              disabled={detectedObjects.length <= 1}
+            >
+              Cull Selection
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={onClear}
+              disabled={detectedObjects.length === 0}
+            >
+              Clear OOBBs
+            </button>
           </div>
 
           <div className="panel-section">
@@ -115,6 +138,47 @@ export default function ObjectDetectionPanel({
             )}
           </div>
         </>
+      )}
+
+      {showCullDialog && (
+        <div className="dialog-overlay">
+          <div className="dialog">
+            <h2>Cull Sensitivity</h2>
+            <div className="dialog-field">
+              <label>
+                Threshold: <strong>{cullThreshold.toFixed(2)}</strong>
+              </label>
+              <input
+                type="range"
+                className="cull-slider"
+                min="0"
+                max="1"
+                step="0.01"
+                value={cullThreshold}
+                onChange={(e) => setCullThreshold(parseFloat(e.target.value))}
+              />
+              <div className="slider-labels">
+                <span>0.0 (aggressive)</span>
+                <span>1.0 (conservative)</span>
+              </div>
+              <p className="panel-hint">
+                Lower values will cull more aggressively (remove OOBBs that are even partially overlapping).
+                Higher values require nearly complete containment before removing.
+              </p>
+            </div>
+            <div className="dialog-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowCullDialog(false)}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={handleCullConfirm}>
+                Apply Cull
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

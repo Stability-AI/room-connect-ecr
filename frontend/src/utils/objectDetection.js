@@ -99,3 +99,70 @@ export function detectObjects(scene, filterTerms, exclusive = false) {
   const meshes = filterMeshesByName(scene, filterTerms, exclusive);
   return meshes.map((mesh) => computeOOBB(mesh));
 }
+
+/**
+ * Compute the volume of an OOBB from its half-extents.
+ */
+function oobbVolume(oobb) {
+  return oobb.halfExtents[0] * oobb.halfExtents[1] * oobb.halfExtents[2] * 8;
+}
+
+/**
+ * Check if a smaller OOBB is contained within (or nearly co-located with) a larger OOBB.
+ * Uses center distance relative to the larger box's extents as the containment test.
+ *
+ * @param {object} smaller - The smaller OOBB
+ * @param {object} larger - The larger OOBB
+ * @param {number} threshold - Position similarity threshold (0.95 = 95% overlap)
+ * @returns {boolean}
+ */
+function isContainedOrColocated(smaller, larger, threshold = 0.95) {
+  const dx = Math.abs(smaller.center[0] - larger.center[0]);
+  const dy = Math.abs(smaller.center[1] - larger.center[1]);
+  const dz = Math.abs(smaller.center[2] - larger.center[2]);
+
+  const withinX = dx + smaller.halfExtents[0] <= larger.halfExtents[0] * (1 + (1 - threshold));
+  const withinY = dy + smaller.halfExtents[1] <= larger.halfExtents[1] * (1 + (1 - threshold));
+  const withinZ = dz + smaller.halfExtents[2] <= larger.halfExtents[2] * (1 + (1 - threshold));
+
+  if (withinX && withinY && withinZ) return true;
+
+  // Also check position similarity (centers within 5% of larger's extent)
+  const lExtent = Math.max(...larger.halfExtents) * 2;
+  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  const positionSimilarity = 1 - (dist / (lExtent || 1));
+
+  return positionSimilarity >= threshold;
+}
+
+/**
+ * Cull smaller OOBBs that are fully contained within or nearly co-located
+ * with a larger OOBB. Keeps the larger box, removes the smaller duplicates.
+ *
+ * @param {Array} objects - Array of OOBB data objects
+ * @param {number} threshold - Similarity threshold (default 0.95)
+ * @returns {Array} Filtered array with redundant smaller OOBBs removed
+ */
+export function cullOverlappingOOBBs(objects, threshold = 0.95) {
+  if (objects.length <= 1) return objects;
+
+  const sorted = [...objects].sort((a, b) => oobbVolume(b) - oobbVolume(a));
+  const kept = [];
+  const removed = new Set();
+
+  for (let i = 0; i < sorted.length; i++) {
+    if (removed.has(i)) continue;
+
+    kept.push(sorted[i]);
+
+    for (let j = i + 1; j < sorted.length; j++) {
+      if (removed.has(j)) continue;
+
+      if (isContainedOrColocated(sorted[j], sorted[i], threshold)) {
+        removed.add(j);
+      }
+    }
+  }
+
+  return kept;
+}
