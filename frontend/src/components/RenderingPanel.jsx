@@ -210,6 +210,9 @@ export default function RenderingPanel({
                 </ul>
                 {selectedCameraId && (
                   <div className="panel-actions" style={{ marginTop: 8 }}>
+                    <button className="btn btn-toggle" onClick={() => onSelectCamera(selectedCameraId, true)}>
+                      Align Viewpoint
+                    </button>
                     <button className="btn btn-toggle" onClick={onRealignCamera}>
                       Realign to View
                     </button>

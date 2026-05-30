@@ -3,21 +3,31 @@ import { MeshBVH } from "three-mesh-bvh";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { BLENDER_FOV } from "../components/CameraFrustum";
 
-const DEFAULT_EYE_HEIGHT = 1.6;
-const DEFAULT_MIN_DISTANCE = 5.0;
-const DEFAULT_MIN_SPACING = 1.3;
-const MAX_ATTEMPTS = 5000;
+const DEFAULT_EYE_HEIGHT_RATIO = 0.3; // 30% up from floor to ceiling
+const DEFAULT_MIN_DISTANCE_RATIO = 0.02; // 2% of scene max dimension
+const DEFAULT_MIN_SPACING_RATIO = 0.05; // 5% of scene max dimension
+const MAX_ATTEMPTS = 10000;
 
 /**
  * Merge all mesh geometries in the scene into a single BufferGeometry
- * with world transforms applied.
+ * with world transforms applied. Only keeps position data (strips UVs,
+ * normals, etc.) to ensure attribute compatibility for merging.
  */
 export function mergeSceneGeometries(scene) {
   const geometries = [];
 
   scene.traverse((child) => {
     if (child.isMesh && child.geometry) {
-      const geo = child.geometry.clone();
+      const srcGeo = child.geometry;
+      const posAttr = srcGeo.getAttribute("position");
+      if (!posAttr) return;
+
+      // Create a minimal geometry with only position data
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", posAttr.clone());
+      if (srcGeo.index) {
+        geo.setIndex(srcGeo.index.clone());
+      }
       geo.applyMatrix4(child.matrixWorld);
       geometries.push(geo);
     }
@@ -31,7 +41,7 @@ export function mergeSceneGeometries(scene) {
  * Build a BVH from a merged geometry for fast proximity queries.
  */
 export function buildSceneBVH(geometry) {
-  return new MeshBVH(geometry);
+  return new MeshBVH(geometry, { maxDepth: 60 });
 }
 
 /**
@@ -59,16 +69,30 @@ function computeBounds(geometry) {
 }
 
 /**
+ * Check if a point is inside a mesh by raycasting downward.
+ * If the ray hits a surface below, the point is likely inside.
+ */
+function isInsideMesh(bvh, point) {
+  const downRay = new THREE.Ray(point, new THREE.Vector3(0, -1, 0));
+  const downHit = bvh.raycastFirst(downRay);
+  if (!downHit) return false;
+
+  // Also check upward — if both hit, we're enclosed
+  const upRay = new THREE.Ray(point, new THREE.Vector3(0, 1, 0));
+  const upHit = bvh.raycastFirst(upRay);
+
+  return !!downHit && !!upHit;
+}
+
+/**
  * Generate safe camera positions using BVH proximity queries.
+ * Positions are verified to be INSIDE the mesh (floor below + ceiling above).
  *
  * @param {object} params
  * @param {MeshBVH} params.bvh - BVH built from merged scene geometry
  * @param {THREE.Box3} params.bounds - Scene bounding box
  * @param {number} params.floorY - Detected floor level
  * @param {number} params.count - Number of cameras to generate
- * @param {number} params.minDistance - Minimum distance from nearest surface
- * @param {number} params.minSpacing - Minimum distance between cameras
- * @param {number} params.eyeHeight - Camera height above floor
  * @returns {THREE.Vector3[]} Array of valid camera positions
  */
 export function generateCameraPositions({
@@ -76,24 +100,33 @@ export function generateCameraPositions({
   bounds,
   floorY,
   count = 10,
-  minDistance = DEFAULT_MIN_DISTANCE,
-  minSpacing = DEFAULT_MIN_SPACING,
-  eyeHeight = DEFAULT_EYE_HEIGHT,
 }) {
   const positions = [];
   let attempts = 0;
 
+  const sceneSize = new THREE.Vector3();
+  bounds.getSize(sceneSize);
+  const maxDim = Math.max(sceneSize.x, sceneSize.y, sceneSize.z);
+
+  // Scale thresholds relative to scene size
+  const minDistance = maxDim * DEFAULT_MIN_DISTANCE_RATIO;
+  const minSpacing = maxDim * DEFAULT_MIN_SPACING_RATIO;
+  const eyeHeight = sceneSize.y * DEFAULT_EYE_HEIGHT_RATIO;
   const camY = floorY + eyeHeight;
 
   while (positions.length < count && attempts < MAX_ATTEMPTS) {
     attempts++;
 
-    // Random XZ within scene bounds
-    const x = bounds.min.x + Math.random() * (bounds.max.x - bounds.min.x);
-    const z = bounds.min.z + Math.random() * (bounds.max.z - bounds.min.z);
+    // Random XZ within scene bounds (shrink slightly to avoid edges)
+    const margin = 0.1;
+    const x = bounds.min.x + margin * sceneSize.x + Math.random() * sceneSize.x * (1 - 2 * margin);
+    const z = bounds.min.z + margin * sceneSize.z + Math.random() * sceneSize.z * (1 - 2 * margin);
     const candidate = new THREE.Vector3(x, camY, z);
 
-    // Check distance to nearest surface
+    // Must be inside the building (floor below + ceiling above)
+    if (!isInsideMesh(bvh, candidate)) continue;
+
+    // Check distance to nearest surface (not too close to walls)
     const target = {};
     const hit = bvh.closestPointToPoint(candidate, target);
     if (!hit || target.distance < minDistance) continue;
@@ -105,6 +138,13 @@ export function generateCameraPositions({
     if (tooClose) continue;
 
     positions.push(candidate);
+  }
+
+  if (positions.length < count) {
+    console.warn(
+      `[CameraPlacement] Only placed ${positions.length}/${count} cameras after ${attempts} attempts. ` +
+      `Scene scale: ${maxDim.toFixed(1)}, minDist: ${minDistance.toFixed(2)}, floor: ${floorY.toFixed(2)}, camY: ${camY.toFixed(2)}`
+    );
   }
 
   return positions;

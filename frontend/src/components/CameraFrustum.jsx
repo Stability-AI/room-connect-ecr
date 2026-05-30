@@ -83,14 +83,13 @@ export default function CameraFrustum({ camera, isSelected, onDoubleClick }) {
 
   const color = isSelected ? "#00ff88" : "#ffaa00";
 
-  const rot = useMemo(() => {
-    const q = new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
-    const euler = new THREE.Euler().setFromQuaternion(q);
-    return [euler.x, euler.y, euler.z];
-  }, [quaternion]);
+  const quat = useMemo(
+    () => new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]),
+    [quaternion]
+  );
 
   return (
-    <group position={position} rotation={rot} onDoubleClick={onDoubleClick}>
+    <group position={position} quaternion={quat} onDoubleClick={onDoubleClick}>
       {/* Transparent pyramid faces */}
       <mesh geometry={faceGeometry} renderOrder={5}>
         <meshBasicMaterial
