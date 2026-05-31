@@ -1,147 +1,115 @@
 # Room Connect
 
-An interactive web-based 3D application for defining walkable area volumes and computing connectivity graphs over interior scenes.
+An interactive web-based 3D application for interior scene analysis — define walkable areas, detect objects, place cameras, and render high-quality views via Blender Cycles.
 
-## Overview
+## What It Does
 
-Room Connect lets users:
+Room Connect lets you load large 3D interior scenes (GLTF/GLB, tested up to 700MB) and perform three core tasks:
 
-1. Load a 3D scene (`.glb` format) and explore it interactively in the browser
-2. Draw axis-aligned bounding box volumes to define walkable areas
-3. Name each volume and define which other volumes it connects to
-4. Compute and export a connectivity graph as a JSON metadata file
+1. **Volume Connectivity** — Draw axis-aligned bounding boxes to define walkable areas, set up connectivity relationships between rooms/zones, and export the graph as JSON.
+
+2. **Object Detection** — Filter scene meshes by name (e.g. "chair", "desk"), compute oriented bounding boxes (OOBBs), visualize them as 3D overlays, cull nested duplicates, and export object data.
+
+3. **Rendering** — Place cameras manually or automatically (with BVH-based collision avoidance), render from all viewpoints via Blender Cycles in the backend, and download results as a ZIP with color renders, depth maps, and camera parameters.
 
 ## Screenshots
 
-![Drawing a volume with normal shading](docs/image%20(1).png)
-*Drawing a volume in normal-shaded mode with scale/translate handles visible*
+![Object Detection — OOBBs around detected chairs](docs/screenshot%20(4).png)
+*Object Detection: filtering by "chair" with oriented bounding boxes displayed around all matching meshes*
 
-![Wireframe mode with volume drawing](docs/image%20(2).png)
-*Wireframe rendering mode with a volume being drawn*
+![Rendering — Auto-placed cameras with PBR shading](docs/screenshot(5).png)
+*Rendering: auto-placed cameras with viewpoint entropy maximization, shown in PBR shaded mode*
 
-![Orthographic view in wireframe with editing](docs/image%20(3).png)
-*Orthographic projection in wireframe mode — editing an existing volume*
+![Wireframe with volume defined](docs/image.png)
+*Volume Connectivity: wireframe mode with a walkable volume defined*
 
-![Wireframe with confirmed volume](docs/image.png)
-*Wireframe view showing a confirmed volume in the volume list*
+![Normal shading with volume drawing](docs/image%20(1).png)
+*Drawing a new volume in normal-shaded mode with scale/translate handles*
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React + Three.js (via React Three Fiber) |
+| Frontend | React + Three.js (React Three Fiber) |
 | Build | Vite |
-| Backend | Python / Flask |
+| Backend | Python / Flask / Blender BPY (Cycles) |
 | Deployment | Docker / Docker Compose |
+
+## Quick Start
+
+```bash
+# Clone and run
+git clone https://github.com/Stability-AI/room-connect.git
+cd room-connect
+docker-compose up --build
+```
+
+Open **http://localhost:3000**
+
+## Features
+
+### Scene Visualization
+- 5 shading modes: Normals, Wireframe, Diffuse, Texture (unlit albedo), Shaded (PBR + studio lighting)
+- Orthographic/perspective toggle
+- Handles scenes up to 700MB+ (loaded client-side via blob URL)
+
+### Volume Connectivity
+- Draw, translate, scale axis-aligned bounding boxes
+- Name volumes and define connectivity relationships
+- Double-click to re-edit existing volumes
+- Export connectivity graph as JSON
+
+### Object Detection
+- Case-insensitive substring filtering (include/exclude modes)
+- World-space OOBB computation with 3D wireframe overlays
+- Cull nested/overlapping boxes with adjustable sensitivity
+- Export detected objects as JSON
+
+### Rendering Pipeline
+- Blender Cycles via Docker (GPU-accelerated when available)
+- Chunked file upload (10MB chunks, supports 700MB+ GLB files)
+- Manual camera placement ("Place at View")
+- Automatic camera placement (BVH proximity queries, floor detection, inside-mesh validation)
+- Viewpoint entropy maximization (orient cameras toward detected objects)
+- Override lighting with brightness control
+- 32-bit EXR depth maps
+- Real-time render log streaming (SSE)
+- ZIP download with renders + depth maps + .blend file + camera intrinsics/extrinsics
+
+## Documentation
+
+- [User Guide](docs/USER_GUIDE.md) — Step-by-step usage instructions
+- [Post-Mortem](docs/POST_MORTEM.md) — Technical implementation details and lessons learned
 
 ## Project Structure
 
 ```
 room-connect/
 ├── backend/
-│   ├── app.py              # Flask API server
-│   ├── requirements.txt    # Python dependencies
+│   ├── app.py                  # Flask API (upload, render SSE, file serving)
+│   ├── rendering/
+│   │   └── cycles_renderer.py  # Blender Cycles multi-camera renderer
+│   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx         # Main application
-│   │   ├── components/
-│   │   │   ├── SceneViewer.jsx    # Three.js 3D canvas
-│   │   │   ├── DrawingVolume.jsx  # Volume creation tool
-│   │   │   ├── VolumeBox.jsx      # Rendered volume display
-│   │   │   ├── VolumeDialog.jsx   # Name/connection dialog
-│   │   │   ├── VolumeList.jsx     # Side panel list
-│   │   │   └── Toolbar.jsx        # Top toolbar
+│   │   ├── App.jsx             # Root state management
+│   │   ├── components/         # React components (13 files)
+│   │   ├── utils/              # Camera placement, object detection, upload
 │   │   └── styles/App.css
 │   ├── package.json
-│   ├── vite.config.js
-│   └── Dockerfile
-├── docker-compose.yml      # Development multi-service setup
-├── Dockerfile              # Production single-container build
+│   └── vite.config.js
+├── docs/                       # Screenshots, user guide, post-mortem
+├── docker-compose.yml          # Development multi-service setup
+├── Dockerfile                  # Production single-container build
 └── README.md
 ```
 
-## Getting Started
+## Development
 
-### Development (Docker Compose)
-
-```bash
-docker-compose up
-```
-
-This starts:
-- **Backend** at `http://localhost:5000`
-- **Frontend** at `http://localhost:3000` (with hot reload)
-
-### Production (single container)
-
-```bash
-docker-compose --profile prod up production
-```
-
-Or build and run directly:
-
-```bash
-docker build -t room-connect .
-docker run -p 8080:8080 room-connect
-```
-
-The app is served at `http://localhost:8080`.
-
-### Local Development (without Docker)
-
-**Backend:**
-```bash
-cd backend
-pip install -r requirements.txt
-python app.py
-```
-
-**Frontend:**
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The frontend dev server proxies `/api` requests to the backend at port 5000.
-
-## Usage
-
-1. Click **Load Scene (.glb)** to upload a GLTF/GLB 3D scene file
-2. Explore the scene using mouse controls (orbit, pan, zoom)
-3. Click **Draw Volume** to enter volume drawing mode
-4. Click and drag on the ground plane to create an axis-aligned bounding box
-5. Use the colored handles to scale (cube handles) and translate (sphere handles) the volume:
-   - Red = X axis
-   - Green = Y axis
-   - Blue = Z axis
-6. Press **Enter** to confirm the volume dimensions
-7. In the dialog, name the volume and select which existing volumes it connects to
-8. Repeat for all walkable areas
-9. Click **Export Graph (JSON)** to download the connectivity graph
-
-## Export Format
-
-The exported JSON file contains:
-
-```json
-{
-  "scene": "/api/scenes/...",
-  "volumes": [
-    {
-      "id": "uuid-string",
-      "name": "Hallway",
-      "center": [x, y, z],
-      "size": [width, height, depth],
-      "position": [x, y, z],
-      "connections": [
-        { "id": "uuid-of-connected-volume", "name": "Office A" },
-        { "id": "uuid-of-connected-volume", "name": "Kitchen" }
-      ]
-    }
-  ]
-}
-```
-
-Each volume has a unique UUID, a user-provided name, spatial data (center, size, position), and a list of connected volumes.
+| Task | Command |
+|------|---------|
+| Start (Docker) | `docker-compose up --build` |
+| Frontend only | `cd frontend && npm install && npm run dev` |
+| Backend only | `cd backend && pip install -r requirements.txt && python app.py` |
+| Production build | `docker build -t room-connect . && docker run -p 8080:8080 room-connect` |
