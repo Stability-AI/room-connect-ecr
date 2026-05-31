@@ -19,6 +19,7 @@ export default function RenderingPanel({
   renderHeight: propRenderHeight,
   onRenderSizeChange,
   onRenderOverlaysChange,
+  onFovChange,
   sessionVolumes = [],
   sessionDetectedObjects = [],
 }) {
@@ -39,6 +40,8 @@ export default function RenderingPanel({
     setRenderHeightLocal(h);
     if (onRenderSizeChange) onRenderSizeChange(renderWidth, h);
   };
+  const [overrideFov, setOverrideFov] = useState(false);
+  const [customFov, setCustomFov] = useState(60);
   const [constrainToVolume, setConstrainToVolume] = useState(false);
   const [volumeGraph, setVolumeGraph] = useState(null);
   const [selectedVolumeId, setSelectedVolumeId] = useState("");
@@ -55,6 +58,13 @@ export default function RenderingPanel({
   const [renderStatus, setRenderStatus] = useState("");
   const [renderLogs, setRenderLogs] = useState([]);
   const [renderResults, setRenderResults] = useState(null);
+
+  // Notify parent of FOV changes
+  useEffect(() => {
+    if (onFovChange) {
+      onFovChange(overrideFov ? customFov : null);
+    }
+  }, [overrideFov, customFov, onFovChange]);
 
   // Use session data as fallback when no file is explicitly loaded
   const effectiveVolumes = volumeGraph ? volumeGraph.volumes : sessionVolumes;
@@ -520,6 +530,29 @@ export default function RenderingPanel({
                 onChange={(e) => setSamples(parseInt(e.target.value) || 128)}
               />
             </div>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={overrideFov}
+                onChange={(e) => setOverrideFov(e.target.checked)}
+              />
+              <span>Override FOV</span>
+            </label>
+            {overrideFov && (
+              <div className="panel-row" style={{ marginTop: 4 }}>
+                <label className="panel-sublabel">FOV</label>
+                <input
+                  type="range"
+                  className="cull-slider"
+                  min="20"
+                  max="120"
+                  step="1"
+                  value={customFov}
+                  onChange={(e) => setCustomFov(parseInt(e.target.value))}
+                />
+                <span className="param-value">{customFov}°</span>
+              </div>
+            )}
           </div>
 
           <div className="panel-section">

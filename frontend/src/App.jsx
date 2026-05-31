@@ -30,6 +30,7 @@ export default function App() {
   // Render overlays (volumes + objects loaded in Rendering tab for visualization)
   const [renderOverlays, setRenderOverlays] = useState({ volumes: [], objects: [], selectedVolumeId: null });
   const [autoPlaceError, setAutoPlaceError] = useState(null);
+  const [fovOverride, setFovOverride] = useState(null); // null = use default (60°)
 
   // Object detection state
   const [detectedObjects, setDetectedObjects] = useState([]);
@@ -444,6 +445,7 @@ export default function App() {
             renderHeight={renderHeight}
             onRenderSizeChange={(w, h) => { setRenderWidth(w); setRenderHeight(h); }}
             onRenderOverlaysChange={setRenderOverlays}
+            onFovChange={setFovOverride}
           />
         );
       default:
@@ -491,6 +493,7 @@ export default function App() {
           renderWidth={renderWidth}
           renderHeight={renderHeight}
           renderOverlays={activeTab === "rendering" ? renderOverlays : null}
+          fovOverride={activeTab === "rendering" ? fovOverride : null}
         />
         {renderSidePanel()}
       </div>

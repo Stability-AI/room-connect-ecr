@@ -210,6 +210,20 @@ function CameraRefExposer({ onCameraRef }) {
   return null;
 }
 
+function FovController({ fovOverride }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    if (fovOverride && camera.isPerspectiveCamera) {
+      camera.fov = fovOverride;
+      camera.updateProjectionMatrix();
+    } else if (!fovOverride && camera.isPerspectiveCamera && camera.fov !== 60) {
+      camera.fov = 60;
+      camera.updateProjectionMatrix();
+    }
+  }, [fovOverride, camera]);
+  return null;
+}
+
 function CameraViewSwitcher({ activeCameraView }) {
   const { camera } = useThree();
 
@@ -257,6 +271,7 @@ export default function SceneViewer({
   renderWidth = 1920,
   renderHeight = 1080,
   renderOverlays,
+  fovOverride,
 }) {
   const [sceneHasLights, setSceneHasLights] = useState(false);
   const sceneObjRef = useRef(null);
@@ -296,6 +311,7 @@ export default function SceneViewer({
         {needsLighting && <StudioLighting brightness={lightingBrightness} />}
 
         <CameraRefExposer onCameraRef={onCameraRef} />
+        <FovController fovOverride={fovOverride} />
         {activeCameraView && <CameraViewSwitcher activeCameraView={activeCameraView} />}
 
         {cameras.map((cam) => (
