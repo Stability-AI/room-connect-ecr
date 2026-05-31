@@ -6,11 +6,12 @@ const NEAR = 1.5;
 const FAR = 9.0;
 
 export default function CameraFrustum({ camera, isSelected, onDoubleClick, renderWidth = 1920, renderHeight = 1080 }) {
-  const { position, quaternion } = camera;
+  const { position, quaternion, fov } = camera;
   const ASPECT = renderWidth / renderHeight;
+  const cameraFov = fov || BLENDER_FOV;
 
   const geometry = useMemo(() => {
-    const halfVFov = (BLENDER_FOV * Math.PI) / 360;
+    const halfVFov = (cameraFov * Math.PI) / 360;
     const halfHFov = Math.atan(Math.tan(halfVFov) * ASPECT);
 
     const nearH = Math.tan(halfVFov) * NEAR;
@@ -48,10 +49,10 @@ export default function CameraFrustum({ camera, isSelected, onDoubleClick, rende
     geo.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
     return geo;
-  }, [ASPECT]);
+  }, [ASPECT, cameraFov]);
 
   const faceGeometry = useMemo(() => {
-    const halfVFov = (BLENDER_FOV * Math.PI) / 360;
+    const halfVFov = (cameraFov * Math.PI) / 360;
     const halfHFov = Math.atan(Math.tan(halfVFov) * ASPECT);
 
     const farH = Math.tan(halfVFov) * FAR;
@@ -78,7 +79,7 @@ export default function CameraFrustum({ camera, isSelected, onDoubleClick, rende
     geo.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
     return geo;
-  }, [ASPECT]);
+  }, [ASPECT, cameraFov]);
 
   const color = isSelected ? "#00ff88" : "#ffaa00";
 

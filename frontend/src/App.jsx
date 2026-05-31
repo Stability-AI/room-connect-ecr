@@ -245,12 +245,13 @@ export default function App() {
       `quat=[${q.x.toFixed(4)},${q.y.toFixed(4)},${q.z.toFixed(4)},${q.w.toFixed(4)}] ` +
       `euler(deg)=[x:${(euler.x*180/Math.PI).toFixed(1)}, y:${(euler.y*180/Math.PI).toFixed(1)}, z:${(euler.z*180/Math.PI).toFixed(1)}]`
     );
+    const actualFov = cam.fov || BLENDER_FOV;
     const newCamera = {
       id: uuidv4(),
       name: `Camera ${cameras.length + 1}`,
       position: [cam.position.x, cam.position.y, cam.position.z],
       quaternion: [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w],
-      fov: BLENDER_FOV,
+      fov: actualFov,
     };
     setCameras((prev) => [...prev, newCamera]);
     setSelectedCameraId(newCamera.id);
@@ -346,12 +347,13 @@ export default function App() {
       setTimeout(() => {
         // Now read back the quaternion — same as handlePlaceCamera does
         const currentCam = viewCameraRef.current;
+        const actualFov = currentCam.fov || BLENDER_FOV;
         const newCamera = {
           id: uuidv4(),
           name: `Auto ${cameras.length + index + 1}`,
           position: [currentCam.position.x, currentCam.position.y, currentCam.position.z],
           quaternion: [currentCam.quaternion.x, currentCam.quaternion.y, currentCam.quaternion.z, currentCam.quaternion.w],
-          fov: BLENDER_FOV,
+          fov: actualFov,
         };
 
         console.log(
