@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef } from "react";
+import * as THREE from "three";
 import SceneViewer from "./components/SceneViewer";
 import Toolbar from "./components/Toolbar";
 import VolumeList from "./components/VolumeList";
@@ -6,6 +7,10 @@ import VolumeDialog from "./components/VolumeDialog";
 import ObjectDetectionPanel from "./components/ObjectDetectionPanel";
 import RenderingPanel from "./components/RenderingPanel";
 import { detectObjects, cullOverlappingOOBBs } from "./utils/objectDetection";
+import { uploadSceneChunked } from "./utils/sceneUpload";
+import { v4 as uuidv4 } from "uuid";
+import { BLENDER_FOV } from "./components/CameraFrustum";
+import { autoPlaceCameras } from "./utils/cameraPlacement";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("connectivity");
@@ -16,13 +21,26 @@ export default function App() {
   const [pendingVolume, setPendingVolume] = useState(null);
   const [selectedVolumeId, setSelectedVolumeId] = useState(null);
   const [editingVolumeId, setEditingVolumeId] = useState(null);
-  const [shadingMode, setShadingMode] = useState("normals"); // normals | wireframe | diffuse | textured
+  const [shadingMode, setShadingMode] = useState("normals"); // normals | wireframe | diffuse | texture | shaded
   const [orthographic, setOrthographic] = useState(false);
+  const [renderWidth, setRenderWidth] = useState(1920);
+  const [renderHeight, setRenderHeight] = useState(1080);
+  const [lightingBrightness, setLightingBrightness] = useState(1.5);
 
   // Object detection state
   const [detectedObjects, setDetectedObjects] = useState([]);
   const [showOOBBs, setShowOOBBs] = useState(true);
   const sceneRef = useRef(null);
+
+  // Backend upload state
+  const [sceneFileId, setSceneFileId] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(null);
+
+  // Camera management state
+  const [cameras, setCameras] = useState([]);
+  const [selectedCameraId, setSelectedCameraId] = useState(null);
+  const [activeCameraView, setActiveCameraView] = useState(null);
+  const viewCameraRef = useRef(null); // ref to get current Three.js camera state
 
   const handleFileLoad = useCallback((file) => {
     if (sceneUrl && sceneUrl.startsWith("blob:")) {
@@ -33,6 +51,21 @@ export default function App() {
     setSceneFilename(file.name);
     setVolumes([]);
     setDetectedObjects([]);
+    setSceneFileId(null);
+    setUploadProgress(0);
+
+    // Upload to backend in parallel for rendering support
+    uploadSceneChunked(file, (progress) => {
+      setUploadProgress(progress);
+    })
+      .then((result) => {
+        setSceneFileId(`${result.id}_${result.filename}`);
+        setUploadProgress(null);
+      })
+      .catch((err) => {
+        console.error("Backend upload failed:", err);
+        setUploadProgress(null);
+      });
   }, [sceneUrl]);
 
   const handleSceneReady = useCallback((scene) => {
@@ -172,7 +205,162 @@ export default function App() {
     setActiveTab(tab);
     setIsDrawing(false);
     setEditingVolumeId(null);
+    setActiveCameraView(null);
   }, []);
+
+  // Camera management
+  const handlePlaceCamera = useCallback(() => {
+    if (!viewCameraRef.current) return;
+    const cam = viewCameraRef.current;
+    const q = cam.quaternion;
+    const euler = new THREE.Euler().setFromQuaternion(q);
+    console.log(
+      `[PlaceAtView] pos=[${cam.position.x.toFixed(2)},${cam.position.y.toFixed(2)},${cam.position.z.toFixed(2)}] ` +
+      `quat=[${q.x.toFixed(4)},${q.y.toFixed(4)},${q.z.toFixed(4)},${q.w.toFixed(4)}] ` +
+      `euler(deg)=[x:${(euler.x*180/Math.PI).toFixed(1)}, y:${(euler.y*180/Math.PI).toFixed(1)}, z:${(euler.z*180/Math.PI).toFixed(1)}]`
+    );
+    const newCamera = {
+      id: uuidv4(),
+      name: `Camera ${cameras.length + 1}`,
+      position: [cam.position.x, cam.position.y, cam.position.z],
+      quaternion: [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w],
+      fov: BLENDER_FOV,
+    };
+    setCameras((prev) => [...prev, newCamera]);
+    setSelectedCameraId(newCamera.id);
+  }, [cameras.length]);
+
+  const handleSelectCamera = useCallback((id, switchView = false) => {
+    setSelectedCameraId(id);
+    if (switchView) {
+      const cam = cameras.find((c) => c.id === id);
+      if (cam) setActiveCameraView(cam);
+    }
+  }, [cameras]);
+
+  const handleRealignCamera = useCallback(() => {
+    if (!selectedCameraId || !viewCameraRef.current) return;
+    const cam = viewCameraRef.current;
+    setCameras((prev) =>
+      prev.map((c) =>
+        c.id === selectedCameraId
+          ? {
+              ...c,
+              position: [cam.position.x, cam.position.y, cam.position.z],
+              quaternion: [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w],
+            }
+          : c
+      )
+    );
+    setActiveCameraView(null);
+  }, [selectedCameraId]);
+
+  const handleDeleteCamera = useCallback((id) => {
+    setCameras((prev) => prev.filter((c) => c.id !== id));
+    if (selectedCameraId === id) {
+      setSelectedCameraId(null);
+      setActiveCameraView(null);
+    }
+  }, [selectedCameraId]);
+
+  const handleClearAllCameras = useCallback(() => {
+    setCameras([]);
+    setSelectedCameraId(null);
+    setActiveCameraView(null);
+  }, []);
+
+  const handleAutoPlaceCameras = useCallback((count, maximizeEntropy, params = {}) => {
+    if (!sceneRef.current || !viewCameraRef.current) return;
+
+    const result = autoPlaceCameras(
+      sceneRef.current,
+      count,
+      detectedObjects,
+      maximizeEntropy,
+      params
+    );
+
+    if (result.cameras.length === 0) {
+      console.warn("[AutoPlace] Could not generate any valid camera positions");
+      return;
+    }
+
+    // Sequential placement: move the scene camera to each generated position/view,
+    // then call the same logic as "Place at View" for each one.
+    // Use setTimeout delays to mirror Place at View timing.
+    const cam = viewCameraRef.current;
+    const savedPos = cam.position.clone();
+    const savedQuat = cam.quaternion.clone();
+
+    const placeNext = (index) => {
+      if (index >= result.cameras.length) {
+        // Restore original camera position after all placements
+        cam.position.copy(savedPos);
+        cam.quaternion.copy(savedQuat);
+        return;
+      }
+
+      const genCam = result.cameras[index];
+
+      // Move scene camera to generated position
+      cam.position.set(genCam.position[0], genCam.position[1], genCam.position[2]);
+
+      // Look at generated target (same as user orbiting to look at something)
+      if (genCam.lookTarget) {
+        cam.lookAt(genCam.lookTarget[0], genCam.lookTarget[1], genCam.lookTarget[2]);
+      }
+
+      // Wait one frame for R3F/OrbitControls to process, then capture
+      setTimeout(() => {
+        // Now read back the quaternion — same as handlePlaceCamera does
+        const currentCam = viewCameraRef.current;
+        const newCamera = {
+          id: uuidv4(),
+          name: `Auto ${cameras.length + index + 1}`,
+          position: [currentCam.position.x, currentCam.position.y, currentCam.position.z],
+          quaternion: [currentCam.quaternion.x, currentCam.quaternion.y, currentCam.quaternion.z, currentCam.quaternion.w],
+          fov: BLENDER_FOV,
+        };
+
+        console.log(
+          `[AutoPlace] ${newCamera.name}: pos=[${newCamera.position.map(v=>v.toFixed(2))}] ` +
+          `quat=[${newCamera.quaternion.map(v=>v.toFixed(4))}]`
+        );
+
+        setCameras((prev) => [...prev, newCamera]);
+
+        // Place next camera
+        placeNext(index + 1);
+      }, 100); // 100ms delay per camera to let the render loop process
+    };
+
+    placeNext(0);
+  }, [cameras.length, detectedObjects]);
+
+  const getCameraExportData = useCallback(() => {
+    const aspect = 16 / 9;
+    const fovRad = (BLENDER_FOV * Math.PI) / 180;
+    const fy = renderHeight => 1080 / (2 * Math.tan(fovRad / 2));
+    const fx = fy;
+
+    return {
+      cameras: cameras.map((cam) => ({
+        id: cam.id,
+        name: cam.name,
+        intrinsics: {
+          fov_degrees: cam.fov,
+          fov_radians: (cam.fov * Math.PI) / 180,
+          aspect_ratio: aspect,
+          focal_length_px: { fx: 1080 / (2 * Math.tan(fovRad / 2)), fy: 1080 / (2 * Math.tan(fovRad / 2)) },
+          principal_point: { cx: 960, cy: 540 },
+        },
+        extrinsics: {
+          position: cam.position,
+          quaternion_xyzw: cam.quaternion,
+        },
+      })),
+    };
+  }, [cameras]);
 
   const renderSidePanel = () => {
     switch (activeTab) {
@@ -200,7 +388,27 @@ export default function App() {
           />
         );
       case "rendering":
-        return <RenderingPanel hasScene={!!sceneUrl} sceneFilename={sceneFilename} />;
+        return (
+          <RenderingPanel
+            hasScene={!!sceneUrl}
+            sceneFilename={sceneFilename}
+            sceneFileId={sceneFileId}
+            onBrightnessChange={setLightingBrightness}
+            cameras={cameras}
+            selectedCameraId={selectedCameraId}
+            onPlaceCamera={handlePlaceCamera}
+            onAutoPlaceCameras={handleAutoPlaceCameras}
+            onSelectCamera={handleSelectCamera}
+            onRealignCamera={handleRealignCamera}
+            onDeleteCamera={handleDeleteCamera}
+            onClearAllCameras={handleClearAllCameras}
+            exportCameraData={getCameraExportData}
+            hasDetectedObjects={detectedObjects.length > 0}
+            renderWidth={renderWidth}
+            renderHeight={renderHeight}
+            onRenderSizeChange={(w, h) => { setRenderWidth(w); setRenderHeight(h); }}
+          />
+        );
       default:
         return null;
     }
@@ -237,6 +445,14 @@ export default function App() {
           onSceneReady={handleSceneReady}
           detectedObjects={activeTab === "detection" ? detectedObjects : []}
           showOOBBs={showOOBBs}
+          lightingBrightness={lightingBrightness}
+          cameras={activeTab === "rendering" ? cameras : []}
+          selectedCameraId={selectedCameraId}
+          activeCameraView={activeCameraView}
+          onCameraRef={(ref) => { viewCameraRef.current = ref; }}
+          onSelectCamera={handleSelectCamera}
+          renderWidth={renderWidth}
+          renderHeight={renderHeight}
         />
         {renderSidePanel()}
       </div>

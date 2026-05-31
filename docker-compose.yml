@@ -8,10 +8,12 @@ services:
     volumes:
       - ./backend:/app
       - uploads:/tmp/room-connect-uploads
+      - renders:/tmp/room-connect-renders
     environment:
       - UPLOAD_DIR=/tmp/room-connect-uploads
+      - RENDER_DIR=/tmp/room-connect-renders
       - FLASK_ENV=development
-    command: python app.py
+    command: gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 600 --worker-class gthread --threads 4 --reload app:app
 
   frontend:
     build:
@@ -41,3 +43,4 @@ services:
 
 volumes:
   uploads:
+  renders:
