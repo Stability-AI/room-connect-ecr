@@ -74,11 +74,13 @@ Filter and detect objects in the scene by name, compute bounding boxes.
 3. Click **Detect Objects**
 4. Orange OOBB wireframes appear around matching meshes
 
+You can run detection multiple times with different terms — each new detection appends to the existing list (duplicates are automatically filtered out). This allows you to build up a complete object set incrementally (e.g. detect "chair" first, then "desk", then "monitor").
+
 ### Managing Results
 - **Show/Hide OOBBs**: Toggle visibility
-- **Cull Selection**: Remove smaller boxes nested inside larger ones (adjustable sensitivity slider)
-- **Clear OOBBs**: Remove all detections
-- **Export Objects (JSON)**: Download OOBB data (center, half-extents, rotation matrix, world position)
+- **Cull Selection**: Remove smaller boxes nested inside larger ones (adjustable sensitivity slider). Only affects the latest detection batch — previously committed objects are protected from culling.
+- **Clear OOBBs**: Remove ALL detections and reset the list
+- **Export Objects (JSON)**: Download OOBB data for the full accumulated list (center, half-extents, rotation matrix, world position)
 
 ---
 

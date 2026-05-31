@@ -29,6 +29,7 @@ export default function App() {
 
   // Object detection state
   const [detectedObjects, setDetectedObjects] = useState([]);
+  const [committedCount, setCommittedCount] = useState(0); // objects before latest detection
   const [showOOBBs, setShowOOBBs] = useState(true);
   const sceneRef = useRef(null);
 
@@ -76,7 +77,21 @@ export default function App() {
     if (!sceneRef.current) return;
     const terms = filterTerms.split(",").map((t) => t.trim()).filter(Boolean);
     const results = detectObjects(sceneRef.current, terms, exclusive);
-    setDetectedObjects(results);
+
+    setDetectedObjects((prev) => {
+      // Mark current list as committed before appending new results
+      setCommittedCount(prev.length);
+
+      // Filter out objects already in the committed list
+      const existingKeys = new Set(
+        prev.map((o) => `${o.name}_${o.center[0].toFixed(3)}_${o.center[1].toFixed(3)}_${o.center[2].toFixed(3)}`)
+      );
+      const newOnly = results.filter((o) => {
+        const key = `${o.name}_${o.center[0].toFixed(3)}_${o.center[1].toFixed(3)}_${o.center[2].toFixed(3)}`;
+        return !existingKeys.has(key);
+      });
+      return [...prev, ...newOnly];
+    });
     setShowOOBBs(true);
   }, []);
 
@@ -86,12 +101,19 @@ export default function App() {
 
   const handleClearObjects = useCallback(() => {
     setDetectedObjects([]);
+    setCommittedCount(0);
     setShowOOBBs(false);
   }, []);
 
   const handleCullSelection = useCallback((threshold) => {
-    setDetectedObjects((prev) => cullOverlappingOOBBs(prev, threshold));
-  }, []);
+    setDetectedObjects((prev) => {
+      // Only cull within the new batch (after committedCount), leave committed objects untouched
+      const committed = prev.slice(0, committedCount);
+      const newBatch = prev.slice(committedCount);
+      const culled = cullOverlappingOOBBs(newBatch, threshold);
+      return [...committed, ...culled];
+    });
+  }, [committedCount]);
 
   const handleExportObjects = useCallback(() => {
     if (detectedObjects.length === 0) return;
