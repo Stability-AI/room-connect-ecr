@@ -74,11 +74,13 @@ Open **http://localhost:3000**
 - Constrain to Volume: limit camera placement to a specific room (load connectivity graph or use session data)
 - Viewpoint entropy maximization: orient cameras toward detected objects (load objects JSON or use session data)
 - Session continuity: volumes and objects from earlier tabs available in Rendering without re-export
+- Override FOV (20°–120°) with live viewport preview
 - Override lighting with brightness control
 - 32-bit EXR depth maps
 - Real-time render log streaming (SSE)
 - ZIP download with renders + depth maps + .blend file + camera intrinsics/extrinsics
 - Dynamic frustum aspect ratio matching render dimensions
+- Non-convergence dialog with actionable suggestions
 
 ## Documentation
 

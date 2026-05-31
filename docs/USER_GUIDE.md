@@ -117,8 +117,9 @@ When constraint/entropy options are enabled, the corresponding volumes and OOBBs
 ### Render Settings
 | Setting | Description |
 |---------|-------------|
-| Width / Height | Output resolution in pixels |
+| Width / Height | Output resolution in pixels (frustum shapes update to match) |
 | Samples | Cycles render quality (higher = better, slower) |
+| Override FOV | Custom field of view (20°–120°) with live preview in the viewport |
 | Generate depthmaps | Also render 32-bit EXR depth maps |
 | Override lighting | Replace scene lights with even studio illumination |
 | Brightness slider | Adjust override lighting intensity (0.5x–4.0x) |

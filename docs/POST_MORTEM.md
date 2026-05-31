@@ -94,8 +94,10 @@ Room Connect is an interactive web-based 3D application for interior scene analy
 - Y-up (Three.js) → Z-up (Blender) coordinate conversion for camera poses
 - Material repair: parses GLB JSON header, rebuilds Principled BSDF for materials with `baseColorTexture` (fixes broken importer connections); leaves glass/emissive materials untouched
 - Override lighting: 6 scaled area lights + bright world environment (strength × brightness slider)
+- Override FOV: custom field of view (20°–120°) with live scene camera preview; captured per camera and sent to Blender
 - Output packaged as ZIP (optionally includes .blend file for inspection)
 - SSE (Server-Sent Events) streams render logs to frontend debug console in real-time
+- Non-convergence dialog: popup if auto-placement fails or partially converges with actionable suggestions
 
 ### Camera Placement — Manual
 - "Place at View": captures current Three.js camera position + quaternion
