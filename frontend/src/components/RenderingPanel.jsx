@@ -213,7 +213,7 @@ export default function RenderingPanel({
             name: c.name,
             position: c.position,
             quaternion: c.quaternion,
-            fov: c.fov,
+            fov: overrideFov ? customFov : c.fov,
           })),
         }),
       });

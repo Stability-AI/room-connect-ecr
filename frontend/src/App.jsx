@@ -376,29 +376,33 @@ export default function App() {
   }, [cameras.length, detectedObjects]);
 
   const getCameraExportData = useCallback(() => {
-    const aspect = 16 / 9;
-    const fovRad = (BLENDER_FOV * Math.PI) / 180;
-    const fy = renderHeight => 1080 / (2 * Math.tan(fovRad / 2));
-    const fx = fy;
+    const aspect = renderWidth / renderHeight;
 
     return {
-      cameras: cameras.map((cam) => ({
+      cameras: cameras.map((cam) => {
+        const effectiveFov = fovOverride || cam.fov || 60;
+        const fovRad = (effectiveFov * Math.PI) / 180;
+        const fy = renderHeight / (2 * Math.tan(fovRad / 2));
+        const fx = fy;
+
+        return {
         id: cam.id,
         name: cam.name,
         intrinsics: {
-          fov_degrees: cam.fov,
-          fov_radians: (cam.fov * Math.PI) / 180,
+          fov_degrees: effectiveFov,
+          fov_radians: fovRad,
           aspect_ratio: aspect,
-          focal_length_px: { fx: 1080 / (2 * Math.tan(fovRad / 2)), fy: 1080 / (2 * Math.tan(fovRad / 2)) },
-          principal_point: { cx: 960, cy: 540 },
+          focal_length_px: { fx, fy },
+          principal_point: { cx: renderWidth / 2, cy: renderHeight / 2 },
         },
         extrinsics: {
           position: cam.position,
           quaternion_xyzw: cam.quaternion,
         },
-      })),
+      };
+      }),
     };
-  }, [cameras]);
+  }, [cameras, fovOverride, renderWidth, renderHeight]);
 
   const renderSidePanel = () => {
     switch (activeTab) {
