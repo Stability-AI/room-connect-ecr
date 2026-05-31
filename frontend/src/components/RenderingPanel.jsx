@@ -125,7 +125,23 @@ export default function RenderingPanel({
     reader.onload = (ev) => {
       try {
         const data = JSON.parse(ev.target.result);
-        setLoadedObjects(data.objects || []);
+        const rawObjects = data.objects || [];
+        // Normalize: exported format has nested oobb field, internal format is flat
+        const normalized = rawObjects.map((obj) => {
+          if (obj.oobb) {
+            return {
+              name: obj.name,
+              center: obj.oobb.center,
+              halfExtents: obj.oobb.halfExtents,
+              rotation: obj.oobb.rotation,
+              quaternion: obj.quaternion || [0, 0, 0, 1],
+              worldPosition: obj.worldPosition,
+              worldScale: obj.worldScale,
+            };
+          }
+          return obj;
+        });
+        setLoadedObjects(normalized);
       } catch (err) {
         console.error("Failed to parse detected objects:", err);
       }

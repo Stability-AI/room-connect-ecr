@@ -4,12 +4,15 @@ import * as THREE from "three";
 export default function OOBBOverlay({ oobb }) {
   const { center, halfExtents, quaternion } = oobb;
 
+  if (!center || !halfExtents) return null;
+
   const size = useMemo(
     () => [halfExtents[0] * 2, halfExtents[1] * 2, halfExtents[2] * 2],
     [halfExtents]
   );
 
   const rotation = useMemo(() => {
+    if (!quaternion || quaternion.length < 4) return [0, 0, 0];
     const q = new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
     const euler = new THREE.Euler().setFromQuaternion(q);
     return [euler.x, euler.y, euler.z];
