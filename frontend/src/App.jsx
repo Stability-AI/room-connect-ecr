@@ -262,7 +262,10 @@ export default function App() {
     setSelectedCameraId(id);
     if (switchView) {
       const cam = cameras.find((c) => c.id === id);
-      if (cam) setActiveCameraView(cam);
+      if (cam) {
+        // Spread with timestamp to force useEffect re-trigger even if same camera
+        setActiveCameraView({ ...cam, _ts: Date.now() });
+      }
     }
   }, [cameras]);
 

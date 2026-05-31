@@ -317,7 +317,7 @@ export default function SceneViewer({
         {cameras.map((cam) => (
           <CameraFrustum
             key={cam.id}
-            camera={cam}
+            camera={{ ...cam, fov: fovOverride || cam.fov }}
             isSelected={cam.id === selectedCameraId}
             onDoubleClick={() => onSelectCamera && onSelectCamera(cam.id, true)}
             renderWidth={renderWidth}
