@@ -500,6 +500,11 @@ body {
   border-color: var(--accent-blue);
 }
 
+select.panel-input {
+  appearance: auto;
+  cursor: pointer;
+}
+
 .panel-input-small {
   width: 80px;
 }

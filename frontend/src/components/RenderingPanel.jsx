@@ -36,6 +36,9 @@ export default function RenderingPanel({
     setRenderHeightLocal(h);
     if (onRenderSizeChange) onRenderSizeChange(renderWidth, h);
   };
+  const [constrainToVolume, setConstrainToVolume] = useState(false);
+  const [volumeGraph, setVolumeGraph] = useState(null);
+  const [selectedVolumeId, setSelectedVolumeId] = useState("");
   const [samples, setSamples] = useState(128);
   const [generateDepthmap, setGenerateDepthmap] = useState(false);
   const [overrideLighting, setOverrideLighting] = useState(false);
@@ -52,14 +55,47 @@ export default function RenderingPanel({
   const handleAutoPlace = () => {
     if (!onAutoPlaceCameras) return;
     setIsGenerating(true);
+
+    // Build volume constraint if enabled
+    let volumeConstraint = null;
+    if (constrainToVolume && volumeGraph && selectedVolumeId) {
+      const vol = volumeGraph.volumes.find((v) => v.id === selectedVolumeId);
+      if (vol) {
+        volumeConstraint = {
+          center: vol.center || vol.position,
+          size: vol.size,
+        };
+      }
+    }
+
     setTimeout(() => {
       onAutoPlaceCameras(cameraCount, maximizeEntropy, {
         eyeHeightRatio,
         minDistanceRatio,
         minSpacingRatio,
+        volumeConstraint,
       });
       setIsGenerating(false);
     }, 50);
+  };
+
+  const handleLoadVolumeGraph = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        setVolumeGraph(data);
+        if (data.volumes && data.volumes.length > 0) {
+          setSelectedVolumeId(data.volumes[0].id);
+        }
+      } catch (err) {
+        console.error("Failed to parse connectivity graph:", err);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
   };
 
   const applyPreset = (preset) => {
@@ -215,6 +251,45 @@ export default function RenderingPanel({
               <p className="panel-hint" style={{ color: "var(--accent-orange)" }}>
                 Detect objects first (Object Detection tab) to enable entropy-based orientation.
               </p>
+            )}
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={constrainToVolume}
+                onChange={(e) => setConstrainToVolume(e.target.checked)}
+              />
+              <span>Constrain to Volume</span>
+            </label>
+            {constrainToVolume && (
+              <div className="advanced-settings" style={{ marginTop: 6 }}>
+                <div className="panel-row">
+                  <label className="panel-sublabel">Graph file</label>
+                  <label className="btn btn-toggle" style={{ fontSize: "0.75rem", padding: "4px 8px" }}>
+                    {volumeGraph ? `${volumeGraph.volumes.length} volumes` : "Load JSON"}
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleLoadVolumeGraph}
+                      style={{ display: "none" }}
+                    />
+                  </label>
+                </div>
+                {volumeGraph && volumeGraph.volumes.length > 0 && (
+                  <div className="panel-row">
+                    <label className="panel-sublabel">Volume</label>
+                    <select
+                      className="panel-input"
+                      value={selectedVolumeId}
+                      onChange={(e) => setSelectedVolumeId(e.target.value)}
+                      style={{ flex: 1, fontSize: "0.8rem" }}
+                    >
+                      {volumeGraph.volumes.map((vol) => (
+                        <option key={vol.id} value={vol.id}>{vol.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
             )}
             <button
               className="btn-collapse"

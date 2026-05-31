@@ -103,6 +103,7 @@ export function generateCameraPositions({
   eyeHeightRatio,
   minDistanceRatio,
   minSpacingRatio,
+  volumeConstraint,
 }) {
   const positions = [];
   let attempts = 0;
@@ -117,13 +118,33 @@ export function generateCameraPositions({
   const eyeHeight = sceneSize.y * (eyeHeightRatio || DEFAULT_EYE_HEIGHT_RATIO);
   const camY = floorY + eyeHeight;
 
+  // If volume constraint is set, sample within the volume bounds instead of full scene
+  let sampleBounds;
+  if (volumeConstraint) {
+    const vc = volumeConstraint;
+    const halfSize = [vc.size[0] / 2, vc.size[1] / 2, vc.size[2] / 2];
+    sampleBounds = {
+      minX: vc.center[0] - halfSize[0],
+      maxX: vc.center[0] + halfSize[0],
+      minZ: vc.center[2] - halfSize[2],
+      maxZ: vc.center[2] + halfSize[2],
+    };
+  } else {
+    const margin = 0.1;
+    sampleBounds = {
+      minX: bounds.min.x + margin * sceneSize.x,
+      maxX: bounds.max.x - margin * sceneSize.x,
+      minZ: bounds.min.z + margin * sceneSize.z,
+      maxZ: bounds.max.z - margin * sceneSize.z,
+    };
+  }
+
   while (positions.length < count && attempts < MAX_ATTEMPTS) {
     attempts++;
 
-    // Random XZ within scene bounds (shrink slightly to avoid edges)
-    const margin = 0.1;
-    const x = bounds.min.x + margin * sceneSize.x + Math.random() * sceneSize.x * (1 - 2 * margin);
-    const z = bounds.min.z + margin * sceneSize.z + Math.random() * sceneSize.z * (1 - 2 * margin);
+    // Random XZ within sample bounds
+    const x = sampleBounds.minX + Math.random() * (sampleBounds.maxX - sampleBounds.minX);
+    const z = sampleBounds.minZ + Math.random() * (sampleBounds.maxZ - sampleBounds.minZ);
     const candidate = new THREE.Vector3(x, camY, z);
 
     // Must be inside the building (floor below + ceiling above)
@@ -297,6 +318,7 @@ export function autoPlaceCameras(scene, count, detectedObjects = [], maximizeEnt
     eyeHeightRatio: params.eyeHeightRatio,
     minDistanceRatio: params.minDistanceRatio,
     minSpacingRatio: params.minSpacingRatio,
+    volumeConstraint: params.volumeConstraint,
   });
 
   const quaternions = computeCameraOrientations(
