@@ -23,6 +23,8 @@ export default function App() {
   const [editingVolumeId, setEditingVolumeId] = useState(null);
   const [shadingMode, setShadingMode] = useState("normals"); // normals | wireframe | diffuse | texture | shaded
   const [orthographic, setOrthographic] = useState(false);
+  const [renderWidth, setRenderWidth] = useState(1920);
+  const [renderHeight, setRenderHeight] = useState(1080);
   const [lightingBrightness, setLightingBrightness] = useState(1.5);
 
   // Object detection state
@@ -402,6 +404,9 @@ export default function App() {
             onClearAllCameras={handleClearAllCameras}
             exportCameraData={getCameraExportData}
             hasDetectedObjects={detectedObjects.length > 0}
+            renderWidth={renderWidth}
+            renderHeight={renderHeight}
+            onRenderSizeChange={(w, h) => { setRenderWidth(w); setRenderHeight(h); }}
           />
         );
       default:
@@ -446,6 +451,8 @@ export default function App() {
           activeCameraView={activeCameraView}
           onCameraRef={(ref) => { viewCameraRef.current = ref; }}
           onSelectCamera={handleSelectCamera}
+          renderWidth={renderWidth}
+          renderHeight={renderHeight}
         />
         {renderSidePanel()}
       </div>

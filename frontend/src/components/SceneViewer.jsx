@@ -254,6 +254,8 @@ export default function SceneViewer({
   activeCameraView,
   onCameraRef,
   onSelectCamera,
+  renderWidth = 1920,
+  renderHeight = 1080,
 }) {
   const [sceneHasLights, setSceneHasLights] = useState(false);
   const sceneObjRef = useRef(null);
@@ -301,6 +303,8 @@ export default function SceneViewer({
             camera={cam}
             isSelected={cam.id === selectedCameraId}
             onDoubleClick={() => onSelectCamera && onSelectCamera(cam.id, true)}
+            renderWidth={renderWidth}
+            renderHeight={renderHeight}
           />
         ))}
 

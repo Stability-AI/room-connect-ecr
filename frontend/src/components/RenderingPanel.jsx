@@ -15,6 +15,9 @@ export default function RenderingPanel({
   onClearAllCameras,
   exportCameraData,
   hasDetectedObjects,
+  renderWidth: propRenderWidth,
+  renderHeight: propRenderHeight,
+  onRenderSizeChange,
 }) {
   const [cameraCount, setCameraCount] = useState(10);
   const [maximizeEntropy, setMaximizeEntropy] = useState(false);
@@ -22,8 +25,17 @@ export default function RenderingPanel({
   const [eyeHeightRatio, setEyeHeightRatio] = useState(0.3);
   const [minDistanceRatio, setMinDistanceRatio] = useState(0.02);
   const [minSpacingRatio, setMinSpacingRatio] = useState(0.05);
-  const [renderWidth, setRenderWidth] = useState(1920);
-  const [renderHeight, setRenderHeight] = useState(1080);
+  const [renderWidth, setRenderWidthLocal] = useState(propRenderWidth || 1920);
+  const [renderHeight, setRenderHeightLocal] = useState(propRenderHeight || 1080);
+
+  const setRenderWidth = (w) => {
+    setRenderWidthLocal(w);
+    if (onRenderSizeChange) onRenderSizeChange(w, renderHeight);
+  };
+  const setRenderHeight = (h) => {
+    setRenderHeightLocal(h);
+    if (onRenderSizeChange) onRenderSizeChange(renderWidth, h);
+  };
   const [samples, setSamples] = useState(128);
   const [generateDepthmap, setGenerateDepthmap] = useState(false);
   const [overrideLighting, setOverrideLighting] = useState(false);

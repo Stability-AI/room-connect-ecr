@@ -4,10 +4,10 @@ import * as THREE from "three";
 const BLENDER_FOV = 49.13; // Blender default camera FOV in degrees
 const NEAR = 1.5;
 const FAR = 9.0;
-const ASPECT = 16 / 9;
 
-export default function CameraFrustum({ camera, isSelected, onDoubleClick }) {
+export default function CameraFrustum({ camera, isSelected, onDoubleClick, renderWidth = 1920, renderHeight = 1080 }) {
   const { position, quaternion } = camera;
+  const ASPECT = renderWidth / renderHeight;
 
   const geometry = useMemo(() => {
     const halfVFov = (BLENDER_FOV * Math.PI) / 360;
@@ -48,7 +48,7 @@ export default function CameraFrustum({ camera, isSelected, onDoubleClick }) {
     geo.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
     return geo;
-  }, []);
+  }, [ASPECT]);
 
   const faceGeometry = useMemo(() => {
     const halfVFov = (BLENDER_FOV * Math.PI) / 360;
@@ -70,7 +70,6 @@ export default function CameraFrustum({ camera, isSelected, onDoubleClick }) {
       0, 2, 3,
       0, 3, 4,
       0, 4, 1,
-      // Far face
       1, 2, 3,
       1, 3, 4,
     ]);
@@ -79,7 +78,7 @@ export default function CameraFrustum({ camera, isSelected, onDoubleClick }) {
     geo.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
     return geo;
-  }, []);
+  }, [ASPECT]);
 
   const color = isSelected ? "#00ff88" : "#ffaa00";
 
