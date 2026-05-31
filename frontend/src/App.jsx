@@ -27,6 +27,9 @@ export default function App() {
   const [renderHeight, setRenderHeight] = useState(1080);
   const [lightingBrightness, setLightingBrightness] = useState(1.5);
 
+  // Render overlays (volumes + objects loaded in Rendering tab for visualization)
+  const [renderOverlays, setRenderOverlays] = useState({ volumes: [], objects: [], selectedVolumeId: null });
+
   // Object detection state
   const [detectedObjects, setDetectedObjects] = useState([]);
   const [committedCount, setCommittedCount] = useState(0); // objects before latest detection
@@ -294,10 +297,13 @@ export default function App() {
   const handleAutoPlaceCameras = useCallback((count, maximizeEntropy, params = {}) => {
     if (!sceneRef.current || !viewCameraRef.current) return;
 
+    // Use loaded objects from rendering panel if available, otherwise fall back to detection tab
+    const objectsForEntropy = params.loadedObjects || detectedObjects;
+
     const result = autoPlaceCameras(
       sceneRef.current,
       count,
-      detectedObjects,
+      objectsForEntropy,
       maximizeEntropy,
       params
     );
@@ -429,6 +435,7 @@ export default function App() {
             renderWidth={renderWidth}
             renderHeight={renderHeight}
             onRenderSizeChange={(w, h) => { setRenderWidth(w); setRenderHeight(h); }}
+            onRenderOverlaysChange={setRenderOverlays}
           />
         );
       default:
@@ -475,6 +482,7 @@ export default function App() {
           onSelectCamera={handleSelectCamera}
           renderWidth={renderWidth}
           renderHeight={renderHeight}
+          renderOverlays={activeTab === "rendering" ? renderOverlays : null}
         />
         {renderSidePanel()}
       </div>

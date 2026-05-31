@@ -256,6 +256,7 @@ export default function SceneViewer({
   onSelectCamera,
   renderWidth = 1920,
   renderHeight = 1080,
+  renderOverlays,
 }) {
   const [sceneHasLights, setSceneHasLights] = useState(false);
   const sceneObjRef = useRef(null);
@@ -329,6 +330,37 @@ export default function SceneViewer({
 
         {showOOBBs && detectedObjects && detectedObjects.map((obj, i) => (
           <OOBBOverlay key={`oobb-${i}`} oobb={obj} />
+        ))}
+
+        {/* Render tab overlays: loaded volumes (AABBs) and objects (OOBBs) */}
+        {renderOverlays && renderOverlays.volumes.map((vol, i) => (
+          <mesh
+            key={`rvol-${i}`}
+            position={vol.center || vol.position}
+            renderOrder={3}
+          >
+            <boxGeometry args={vol.size} />
+            <meshBasicMaterial
+              color={vol.id === renderOverlays.selectedVolumeId ? "#00ffaa" : "#00aaff"}
+              transparent
+              opacity={vol.id === renderOverlays.selectedVolumeId ? 0.15 : 0.06}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+            />
+          </mesh>
+        ))}
+        {renderOverlays && renderOverlays.volumes.map((vol, i) => (
+          <lineSegments key={`rvol-edge-${i}`} position={vol.center || vol.position} renderOrder={4}>
+            <edgesGeometry args={[new THREE.BoxGeometry(...vol.size)]} />
+            <lineBasicMaterial
+              color={vol.id === renderOverlays.selectedVolumeId ? "#00ffaa" : "#00aaff"}
+              transparent
+              opacity={0.6}
+            />
+          </lineSegments>
+        ))}
+        {renderOverlays && renderOverlays.objects.map((obj, i) => (
+          <OOBBOverlay key={`robj-${i}`} oobb={obj} />
         ))}
 
         {isDrawing && <DrawingVolume onVolumeCreated={onVolumeCreated} />}

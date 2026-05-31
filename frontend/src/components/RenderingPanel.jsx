@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 export default function RenderingPanel({
   hasScene,
@@ -18,6 +18,7 @@ export default function RenderingPanel({
   renderWidth: propRenderWidth,
   renderHeight: propRenderHeight,
   onRenderSizeChange,
+  onRenderOverlaysChange,
 }) {
   const [cameraCount, setCameraCount] = useState(10);
   const [maximizeEntropy, setMaximizeEntropy] = useState(false);
@@ -39,6 +40,7 @@ export default function RenderingPanel({
   const [constrainToVolume, setConstrainToVolume] = useState(false);
   const [volumeGraph, setVolumeGraph] = useState(null);
   const [selectedVolumeId, setSelectedVolumeId] = useState("");
+  const [loadedObjects, setLoadedObjects] = useState(null);
   const [samples, setSamples] = useState(128);
   const [generateDepthmap, setGenerateDepthmap] = useState(false);
   const [overrideLighting, setOverrideLighting] = useState(false);
@@ -51,6 +53,17 @@ export default function RenderingPanel({
   const [renderStatus, setRenderStatus] = useState("");
   const [renderLogs, setRenderLogs] = useState([]);
   const [renderResults, setRenderResults] = useState(null);
+
+  // Notify parent of overlay data for 3D visualization
+  useEffect(() => {
+    if (onRenderOverlaysChange) {
+      onRenderOverlaysChange({
+        volumes: constrainToVolume && volumeGraph ? volumeGraph.volumes : [],
+        objects: maximizeEntropy && loadedObjects ? loadedObjects : [],
+        selectedVolumeId: constrainToVolume ? selectedVolumeId : null,
+      });
+    }
+  }, [volumeGraph, loadedObjects, constrainToVolume, maximizeEntropy, selectedVolumeId, onRenderOverlaysChange]);
 
   const handleAutoPlace = () => {
     if (!onAutoPlaceCameras) return;
@@ -69,11 +82,12 @@ export default function RenderingPanel({
     }
 
     setTimeout(() => {
-      onAutoPlaceCameras(cameraCount, maximizeEntropy, {
+      onAutoPlaceCameras(cameraCount, maximizeEntropy && !!loadedObjects, {
         eyeHeightRatio,
         minDistanceRatio,
         minSpacingRatio,
         volumeConstraint,
+        loadedObjects: maximizeEntropy ? loadedObjects : null,
       });
       setIsGenerating(false);
     }, 50);
@@ -92,6 +106,22 @@ export default function RenderingPanel({
         }
       } catch (err) {
         console.error("Failed to parse connectivity graph:", err);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const handleLoadObjects = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        setLoadedObjects(data.objects || []);
+      } catch (err) {
+        console.error("Failed to parse detected objects:", err);
       }
     };
     reader.readAsText(file);
@@ -243,14 +273,38 @@ export default function RenderingPanel({
                 type="checkbox"
                 checked={maximizeEntropy}
                 onChange={(e) => setMaximizeEntropy(e.target.checked)}
-                disabled={!hasDetectedObjects}
               />
               <span>Maximize Viewpoint Entropy</span>
             </label>
-            {maximizeEntropy && !hasDetectedObjects && (
-              <p className="panel-hint" style={{ color: "var(--accent-orange)" }}>
-                Detect objects first (Object Detection tab) to enable entropy-based orientation.
-              </p>
+            {maximizeEntropy && (
+              <div className="advanced-settings" style={{ marginTop: 6 }}>
+                <div className="panel-row">
+                  <label className="panel-sublabel">Objects file</label>
+                  <label className="btn btn-toggle" style={{ fontSize: "0.75rem", padding: "4px 8px" }}>
+                    {loadedObjects ? `${loadedObjects.length} objects` : "Load JSON"}
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleLoadObjects}
+                      style={{ display: "none" }}
+                    />
+                  </label>
+                  {loadedObjects && (
+                    <button
+                      className="btn-delete"
+                      onClick={() => setLoadedObjects(null)}
+                      title="Clear objects"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                {!loadedObjects && (
+                  <p className="panel-hint">
+                    Load a detected_objects.json to orient cameras toward objects.
+                  </p>
+                )}
+              </div>
             )}
             <label className="checkbox-row">
               <input
@@ -287,6 +341,13 @@ export default function RenderingPanel({
                         <option key={vol.id} value={vol.id}>{vol.name}</option>
                       ))}
                     </select>
+                    <button
+                      className="btn-delete"
+                      onClick={() => { setVolumeGraph(null); setSelectedVolumeId(""); }}
+                      title="Clear volumes"
+                    >
+                      ×
+                    </button>
                   </div>
                 )}
               </div>
