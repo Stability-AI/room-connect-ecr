@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef } from "react";
+import * as THREE from "three";
 import SceneViewer from "./components/SceneViewer";
 import Toolbar from "./components/Toolbar";
 import VolumeList from "./components/VolumeList";
@@ -209,6 +210,13 @@ export default function App() {
   const handlePlaceCamera = useCallback(() => {
     if (!viewCameraRef.current) return;
     const cam = viewCameraRef.current;
+    const q = cam.quaternion;
+    const euler = new THREE.Euler().setFromQuaternion(q);
+    console.log(
+      `[PlaceAtView] pos=[${cam.position.x.toFixed(2)},${cam.position.y.toFixed(2)},${cam.position.z.toFixed(2)}] ` +
+      `quat=[${q.x.toFixed(4)},${q.y.toFixed(4)},${q.z.toFixed(4)},${q.w.toFixed(4)}] ` +
+      `euler(deg)=[x:${(euler.x*180/Math.PI).toFixed(1)}, y:${(euler.y*180/Math.PI).toFixed(1)}, z:${(euler.z*180/Math.PI).toFixed(1)}]`
+    );
     const newCamera = {
       id: uuidv4(),
       name: `Camera ${cameras.length + 1}`,
@@ -260,7 +268,7 @@ export default function App() {
   }, []);
 
   const handleAutoPlaceCameras = useCallback((count, maximizeEntropy, params = {}) => {
-    if (!sceneRef.current) return;
+    if (!sceneRef.current || !viewCameraRef.current) return;
 
     const result = autoPlaceCameras(
       sceneRef.current,
@@ -275,15 +283,56 @@ export default function App() {
       return;
     }
 
-    const newCameras = result.cameras.map((cam, i) => ({
-      id: uuidv4(),
-      name: `Auto ${cameras.length + i + 1}`,
-      position: cam.position,
-      quaternion: cam.quaternion,
-      fov: BLENDER_FOV,
-    }));
+    // Sequential placement: move the scene camera to each generated position/view,
+    // then call the same logic as "Place at View" for each one.
+    // Use setTimeout delays to mirror Place at View timing.
+    const cam = viewCameraRef.current;
+    const savedPos = cam.position.clone();
+    const savedQuat = cam.quaternion.clone();
 
-    setCameras((prev) => [...prev, ...newCameras]);
+    const placeNext = (index) => {
+      if (index >= result.cameras.length) {
+        // Restore original camera position after all placements
+        cam.position.copy(savedPos);
+        cam.quaternion.copy(savedQuat);
+        return;
+      }
+
+      const genCam = result.cameras[index];
+
+      // Move scene camera to generated position
+      cam.position.set(genCam.position[0], genCam.position[1], genCam.position[2]);
+
+      // Look at generated target (same as user orbiting to look at something)
+      if (genCam.lookTarget) {
+        cam.lookAt(genCam.lookTarget[0], genCam.lookTarget[1], genCam.lookTarget[2]);
+      }
+
+      // Wait one frame for R3F/OrbitControls to process, then capture
+      setTimeout(() => {
+        // Now read back the quaternion — same as handlePlaceCamera does
+        const currentCam = viewCameraRef.current;
+        const newCamera = {
+          id: uuidv4(),
+          name: `Auto ${cameras.length + index + 1}`,
+          position: [currentCam.position.x, currentCam.position.y, currentCam.position.z],
+          quaternion: [currentCam.quaternion.x, currentCam.quaternion.y, currentCam.quaternion.z, currentCam.quaternion.w],
+          fov: BLENDER_FOV,
+        };
+
+        console.log(
+          `[AutoPlace] ${newCamera.name}: pos=[${newCamera.position.map(v=>v.toFixed(2))}] ` +
+          `quat=[${newCamera.quaternion.map(v=>v.toFixed(4))}]`
+        );
+
+        setCameras((prev) => [...prev, newCamera]);
+
+        // Place next camera
+        placeNext(index + 1);
+      }, 100); // 100ms delay per camera to let the render loop process
+    };
+
+    placeNext(0);
   }, [cameras.length, detectedObjects]);
 
   const getCameraExportData = useCallback(() => {
