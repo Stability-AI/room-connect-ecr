@@ -19,6 +19,8 @@ export default function RenderingPanel({
   renderHeight: propRenderHeight,
   onRenderSizeChange,
   onRenderOverlaysChange,
+  sessionVolumes = [],
+  sessionDetectedObjects = [],
 }) {
   const [cameraCount, setCameraCount] = useState(10);
   const [maximizeEntropy, setMaximizeEntropy] = useState(false);
@@ -54,16 +56,20 @@ export default function RenderingPanel({
   const [renderLogs, setRenderLogs] = useState([]);
   const [renderResults, setRenderResults] = useState(null);
 
+  // Use session data as fallback when no file is explicitly loaded
+  const effectiveVolumes = volumeGraph ? volumeGraph.volumes : sessionVolumes;
+  const effectiveObjects = loadedObjects || sessionDetectedObjects;
+
   // Notify parent of overlay data for 3D visualization
   useEffect(() => {
     if (onRenderOverlaysChange) {
       onRenderOverlaysChange({
-        volumes: constrainToVolume && volumeGraph ? volumeGraph.volumes : [],
-        objects: maximizeEntropy && loadedObjects ? loadedObjects : [],
+        volumes: constrainToVolume ? effectiveVolumes : [],
+        objects: maximizeEntropy ? effectiveObjects : [],
         selectedVolumeId: constrainToVolume ? selectedVolumeId : null,
       });
     }
-  }, [volumeGraph, loadedObjects, constrainToVolume, maximizeEntropy, selectedVolumeId, onRenderOverlaysChange]);
+  }, [effectiveVolumes, effectiveObjects, constrainToVolume, maximizeEntropy, selectedVolumeId, onRenderOverlaysChange]);
 
   const handleAutoPlace = () => {
     if (!onAutoPlaceCameras) return;
@@ -71,8 +77,8 @@ export default function RenderingPanel({
 
     // Build volume constraint if enabled
     let volumeConstraint = null;
-    if (constrainToVolume && volumeGraph && selectedVolumeId) {
-      const vol = volumeGraph.volumes.find((v) => v.id === selectedVolumeId);
+    if (constrainToVolume && selectedVolumeId && effectiveVolumes.length > 0) {
+      const vol = effectiveVolumes.find((v) => v.id === selectedVolumeId);
       if (vol) {
         volumeConstraint = {
           center: vol.center || vol.position,
@@ -82,12 +88,12 @@ export default function RenderingPanel({
     }
 
     setTimeout(() => {
-      onAutoPlaceCameras(cameraCount, maximizeEntropy && !!loadedObjects, {
+      onAutoPlaceCameras(cameraCount, maximizeEntropy && effectiveObjects.length > 0, {
         eyeHeightRatio,
         minDistanceRatio,
         minSpacingRatio,
         volumeConstraint,
-        loadedObjects: maximizeEntropy ? loadedObjects : null,
+        loadedObjects: maximizeEntropy ? effectiveObjects : null,
       });
       setIsGenerating(false);
     }, 50);
@@ -281,7 +287,7 @@ export default function RenderingPanel({
                 <div className="panel-row">
                   <label className="panel-sublabel">Objects file</label>
                   <label className="btn btn-toggle" style={{ fontSize: "0.75rem", padding: "4px 8px" }}>
-                    {loadedObjects ? `${loadedObjects.length} objects` : "Load JSON"}
+                    {loadedObjects ? `${loadedObjects.length} loaded` : sessionDetectedObjects.length > 0 ? `${sessionDetectedObjects.length} in session` : "Load JSON"}
                     <input
                       type="file"
                       accept=".json"
@@ -299,9 +305,14 @@ export default function RenderingPanel({
                     </button>
                   )}
                 </div>
-                {!loadedObjects && (
+                {!loadedObjects && sessionDetectedObjects.length === 0 && (
                   <p className="panel-hint">
-                    Load a detected_objects.json to orient cameras toward objects.
+                    Load a detected_objects.json or detect objects in the Object Detection tab.
+                  </p>
+                )}
+                {!loadedObjects && sessionDetectedObjects.length > 0 && (
+                  <p className="panel-hint">
+                    Using {sessionDetectedObjects.length} objects from current session. Load JSON to override.
                   </p>
                 )}
               </div>
@@ -319,7 +330,7 @@ export default function RenderingPanel({
                 <div className="panel-row">
                   <label className="panel-sublabel">Graph file</label>
                   <label className="btn btn-toggle" style={{ fontSize: "0.75rem", padding: "4px 8px" }}>
-                    {volumeGraph ? `${volumeGraph.volumes.length} volumes` : "Load JSON"}
+                    {volumeGraph ? `${volumeGraph.volumes.length} loaded` : sessionVolumes.length > 0 ? `${sessionVolumes.length} in session` : "Load JSON"}
                     <input
                       type="file"
                       accept=".json"
@@ -328,7 +339,7 @@ export default function RenderingPanel({
                     />
                   </label>
                 </div>
-                {volumeGraph && volumeGraph.volumes.length > 0 && (
+                {effectiveVolumes.length > 0 && (
                   <div className="panel-row">
                     <label className="panel-sublabel">Volume</label>
                     <select
@@ -337,18 +348,23 @@ export default function RenderingPanel({
                       onChange={(e) => setSelectedVolumeId(e.target.value)}
                       style={{ flex: 1, fontSize: "0.8rem" }}
                     >
-                      {volumeGraph.volumes.map((vol) => (
+                      {effectiveVolumes.map((vol) => (
                         <option key={vol.id} value={vol.id}>{vol.name}</option>
                       ))}
                     </select>
-                    <button
-                      className="btn-delete"
-                      onClick={() => { setVolumeGraph(null); setSelectedVolumeId(""); }}
-                      title="Clear volumes"
-                    >
-                      ×
-                    </button>
+                    {volumeGraph && (
+                      <button
+                        className="btn-delete"
+                        onClick={() => { setVolumeGraph(null); setSelectedVolumeId(""); }}
+                        title="Clear loaded file"
+                      >
+                        ×
+                      </button>
+                    )}
                   </div>
+                )}
+                {!volumeGraph && sessionVolumes.length > 0 && (
+                  <p className="panel-hint">Using {sessionVolumes.length} volumes from current session.</p>
                 )}
               </div>
             )}

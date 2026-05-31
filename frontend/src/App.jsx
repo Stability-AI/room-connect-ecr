@@ -432,6 +432,8 @@ export default function App() {
             onClearAllCameras={handleClearAllCameras}
             exportCameraData={getCameraExportData}
             hasDetectedObjects={detectedObjects.length > 0}
+            sessionVolumes={volumes}
+            sessionDetectedObjects={detectedObjects}
             renderWidth={renderWidth}
             renderHeight={renderHeight}
             onRenderSizeChange={(w, h) => { setRenderWidth(w); setRenderHeight(h); }}
