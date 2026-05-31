@@ -29,6 +29,7 @@ export default function App() {
 
   // Render overlays (volumes + objects loaded in Rendering tab for visualization)
   const [renderOverlays, setRenderOverlays] = useState({ volumes: [], objects: [], selectedVolumeId: null });
+  const [autoPlaceError, setAutoPlaceError] = useState(null);
 
   // Object detection state
   const [detectedObjects, setDetectedObjects] = useState([]);
@@ -309,8 +310,11 @@ export default function App() {
     );
 
     if (result.cameras.length === 0) {
-      console.warn("[AutoPlace] Could not generate any valid camera positions");
+      setAutoPlaceError("Camera placement did not converge. No valid positions found — try adjusting Advanced Settings (reduce min wall distance, reduce min spacing) or select a different volume constraint.");
       return;
+    }
+    if (result.cameras.length < count) {
+      setAutoPlaceError(`Only ${result.cameras.length} of ${count} cameras could be placed. Consider relaxing the Advanced Settings or expanding the volume constraint.`);
     }
 
     // Sequential placement: move the scene camera to each generated position/view,
@@ -494,6 +498,19 @@ export default function App() {
           onConfirm={handleDialogConfirm}
           onCancel={handleDialogCancel}
         />
+      )}
+      {autoPlaceError && (
+        <div className="dialog-overlay">
+          <div className="dialog">
+            <h2>Camera Placement</h2>
+            <p style={{ fontSize: "0.9rem", lineHeight: 1.5 }}>{autoPlaceError}</p>
+            <div className="dialog-actions">
+              <button className="btn btn-primary" onClick={() => setAutoPlaceError(null)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
