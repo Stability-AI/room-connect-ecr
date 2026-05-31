@@ -18,6 +18,10 @@ export default function RenderingPanel({
 }) {
   const [cameraCount, setCameraCount] = useState(10);
   const [maximizeEntropy, setMaximizeEntropy] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [eyeHeightRatio, setEyeHeightRatio] = useState(0.3);
+  const [minDistanceRatio, setMinDistanceRatio] = useState(0.02);
+  const [minSpacingRatio, setMinSpacingRatio] = useState(0.05);
   const [renderWidth, setRenderWidth] = useState(1920);
   const [renderHeight, setRenderHeight] = useState(1080);
   const [samples, setSamples] = useState(128);
@@ -27,14 +31,42 @@ export default function RenderingPanel({
   const [includeBlend, setIncludeBlend] = useState(false);
   const [exportIntrinsics, setExportIntrinsics] = useState(false);
   const [showDebugConsole, setShowDebugConsole] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [renderStatus, setRenderStatus] = useState("");
   const [renderLogs, setRenderLogs] = useState([]);
   const [renderResults, setRenderResults] = useState(null);
 
   const handleAutoPlace = () => {
-    if (onAutoPlaceCameras) {
-      onAutoPlaceCameras(cameraCount, maximizeEntropy);
+    if (!onAutoPlaceCameras) return;
+    setIsGenerating(true);
+    setTimeout(() => {
+      onAutoPlaceCameras(cameraCount, maximizeEntropy, {
+        eyeHeightRatio,
+        minDistanceRatio,
+        minSpacingRatio,
+      });
+      setIsGenerating(false);
+    }, 50);
+  };
+
+  const applyPreset = (preset) => {
+    switch (preset) {
+      case "relaxed":
+        setEyeHeightRatio(0.3);
+        setMinDistanceRatio(0.01);
+        setMinSpacingRatio(0.03);
+        break;
+      case "conservative":
+        setEyeHeightRatio(0.35);
+        setMinDistanceRatio(0.04);
+        setMinSpacingRatio(0.08);
+        break;
+      case "dense":
+        setEyeHeightRatio(0.3);
+        setMinDistanceRatio(0.01);
+        setMinSpacingRatio(0.02);
+        break;
     }
   };
 
@@ -172,14 +204,64 @@ export default function RenderingPanel({
                 Detect objects first (Object Detection tab) to enable entropy-based orientation.
               </p>
             )}
+            <button
+              className="btn-collapse"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+            >
+              {showAdvanced ? "▾ Advanced Settings" : "▸ Advanced Settings"}
+            </button>
+            {showAdvanced && (
+              <div className="advanced-settings">
+                <div className="panel-row">
+                  <label className="panel-sublabel">Eye height</label>
+                  <input
+                    type="range" min="0.1" max="0.8" step="0.05"
+                    value={eyeHeightRatio}
+                    onChange={(e) => setEyeHeightRatio(parseFloat(e.target.value))}
+                    className="cull-slider"
+                  />
+                  <span className="param-value">{(eyeHeightRatio * 100).toFixed(0)}%</span>
+                </div>
+                <div className="panel-row">
+                  <label className="panel-sublabel">Min wall dist</label>
+                  <input
+                    type="range" min="0.005" max="0.1" step="0.005"
+                    value={minDistanceRatio}
+                    onChange={(e) => setMinDistanceRatio(parseFloat(e.target.value))}
+                    className="cull-slider"
+                  />
+                  <span className="param-value">{(minDistanceRatio * 100).toFixed(1)}%</span>
+                </div>
+                <div className="panel-row">
+                  <label className="panel-sublabel">Min spacing</label>
+                  <input
+                    type="range" min="0.01" max="0.15" step="0.005"
+                    value={minSpacingRatio}
+                    onChange={(e) => setMinSpacingRatio(parseFloat(e.target.value))}
+                    className="cull-slider"
+                  />
+                  <span className="param-value">{(minSpacingRatio * 100).toFixed(1)}%</span>
+                </div>
+                <div className="preset-row">
+                  <button className="btn-preset" onClick={() => applyPreset("relaxed")}>Relaxed</button>
+                  <button className="btn-preset" onClick={() => applyPreset("conservative")}>Conservative</button>
+                  <button className="btn-preset" onClick={() => applyPreset("dense")}>Dense</button>
+                </div>
+              </div>
+            )}
             <div className="panel-actions">
-              <button className="btn btn-accent" onClick={handleAutoPlace} disabled={!hasScene}>
-                Auto-Place Cameras
+              <button className="btn btn-accent" onClick={handleAutoPlace} disabled={!hasScene || isGenerating}>
+                {isGenerating ? "Generating..." : "Auto-Place Cameras"}
               </button>
               <button className="btn btn-primary" onClick={onPlaceCamera}>
                 Place at View
               </button>
             </div>
+            {isGenerating && (
+              <div className="barber-pole-container" style={{ marginTop: 6 }}>
+                <div className="barber-pole" />
+              </div>
+            )}
           </div>
 
           {/* Camera list */}

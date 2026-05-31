@@ -673,6 +673,66 @@ body {
   100% { background-position: 28px 0; }
 }
 
+/* Advanced settings collapsible */
+.btn-collapse {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-top: 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.btn-collapse:hover {
+  color: var(--accent-blue);
+}
+
+.advanced-settings {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
+.advanced-settings .panel-row {
+  margin-bottom: 6px;
+}
+
+.param-value {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-family: monospace;
+  min-width: 36px;
+  text-align: right;
+}
+
+.preset-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.btn-preset {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+
+.btn-preset:hover {
+  border-color: var(--accent-blue);
+  color: var(--text-primary);
+}
+
 /* Debug console */
 .debug-console {
   position: fixed;

@@ -259,14 +259,15 @@ export default function App() {
     setActiveCameraView(null);
   }, []);
 
-  const handleAutoPlaceCameras = useCallback((count, maximizeEntropy) => {
+  const handleAutoPlaceCameras = useCallback((count, maximizeEntropy, params = {}) => {
     if (!sceneRef.current) return;
 
     const result = autoPlaceCameras(
       sceneRef.current,
       count,
       detectedObjects,
-      maximizeEntropy
+      maximizeEntropy,
+      params
     );
 
     if (result.cameras.length === 0) {

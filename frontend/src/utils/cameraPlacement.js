@@ -100,6 +100,9 @@ export function generateCameraPositions({
   bounds,
   floorY,
   count = 10,
+  eyeHeightRatio,
+  minDistanceRatio,
+  minSpacingRatio,
 }) {
   const positions = [];
   let attempts = 0;
@@ -108,10 +111,10 @@ export function generateCameraPositions({
   bounds.getSize(sceneSize);
   const maxDim = Math.max(sceneSize.x, sceneSize.y, sceneSize.z);
 
-  // Scale thresholds relative to scene size
-  const minDistance = maxDim * DEFAULT_MIN_DISTANCE_RATIO;
-  const minSpacing = maxDim * DEFAULT_MIN_SPACING_RATIO;
-  const eyeHeight = sceneSize.y * DEFAULT_EYE_HEIGHT_RATIO;
+  // Scale thresholds relative to scene size (use overrides or defaults)
+  const minDistance = maxDim * (minDistanceRatio || DEFAULT_MIN_DISTANCE_RATIO);
+  const minSpacing = maxDim * (minSpacingRatio || DEFAULT_MIN_SPACING_RATIO);
+  const eyeHeight = sceneSize.y * (eyeHeightRatio || DEFAULT_EYE_HEIGHT_RATIO);
   const camY = floorY + eyeHeight;
 
   while (positions.length < count && attempts < MAX_ATTEMPTS) {
@@ -184,14 +187,12 @@ export function computeCameraOrientations(
       lookTarget.y = pos.y - 0.5;
     }
 
-    // Compute quaternion from look-at direction
-    const direction = new THREE.Vector3().subVectors(lookTarget, pos).normalize();
-    const quaternion = new THREE.Quaternion();
-
-    // Three.js camera looks down -Z, so we use a lookAt matrix
-    const lookMatrix = new THREE.Matrix4();
-    lookMatrix.lookAt(pos, lookTarget, new THREE.Vector3(0, 1, 0));
-    quaternion.setFromRotationMatrix(lookMatrix);
+    // Compute quaternion using the same method as Three.js Object3D.lookAt
+    // Camera convention: -Z is forward (looking direction)
+    const tempObj = new THREE.Object3D();
+    tempObj.position.copy(pos);
+    tempObj.lookAt(lookTarget);
+    const quaternion = tempObj.quaternion.clone();
 
     quaternions.push(quaternion);
   }
@@ -275,7 +276,7 @@ function findBestLookTarget(cameraPos, detectedObjects, halfFov) {
  * @param {boolean} maximizeEntropy - Whether to optimize for object visibility
  * @returns {{ positions: number[][], quaternions: number[][] }} Camera data ready for state
  */
-export function autoPlaceCameras(scene, count, detectedObjects = [], maximizeEntropy = false) {
+export function autoPlaceCameras(scene, count, detectedObjects = [], maximizeEntropy = false, params = {}) {
   const mergedGeo = mergeSceneGeometries(scene);
   if (!mergedGeo) {
     console.warn("[CameraPlacement] No mesh geometry found in scene");
@@ -293,6 +294,9 @@ export function autoPlaceCameras(scene, count, detectedObjects = [], maximizeEnt
     bounds,
     floorY,
     count,
+    eyeHeightRatio: params.eyeHeightRatio,
+    minDistanceRatio: params.minDistanceRatio,
+    minSpacingRatio: params.minSpacingRatio,
   });
 
   const quaternions = computeCameraOrientations(
