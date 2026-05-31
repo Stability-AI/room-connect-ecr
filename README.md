@@ -61,8 +61,9 @@ Open **http://localhost:3000**
 
 ### Object Detection
 - Case-insensitive substring filtering (include/exclude modes)
+- Incremental detection: multiple runs accumulate results (deduplicated)
 - World-space OOBB computation with 3D wireframe overlays
-- Cull nested/overlapping boxes with adjustable sensitivity
+- Cull nested/overlapping boxes with adjustable sensitivity (protects committed objects)
 - Export detected objects as JSON
 
 ### Rendering Pipeline
@@ -70,11 +71,14 @@ Open **http://localhost:3000**
 - Chunked file upload (10MB chunks, supports 700MB+ GLB files)
 - Manual camera placement ("Place at View")
 - Automatic camera placement (BVH proximity queries, floor detection, inside-mesh validation)
-- Viewpoint entropy maximization (orient cameras toward detected objects)
+- Constrain to Volume: limit camera placement to a specific room (load connectivity graph or use session data)
+- Viewpoint entropy maximization: orient cameras toward detected objects (load objects JSON or use session data)
+- Session continuity: volumes and objects from earlier tabs available in Rendering without re-export
 - Override lighting with brightness control
 - 32-bit EXR depth maps
 - Real-time render log streaming (SSE)
 - ZIP download with renders + depth maps + .blend file + camera intrinsics/extrinsics
+- Dynamic frustum aspect ratio matching render dimensions
 
 ## Documentation
 

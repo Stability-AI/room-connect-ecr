@@ -96,9 +96,16 @@ Place cameras and render high-quality views via Blender Cycles.
 
 **Automatic (Auto-Place)**:
 1. Set the number of cameras to generate
-2. Optionally check **Maximize Viewpoint Entropy** (requires objects detected first)
-3. Optionally expand **Advanced Settings** to adjust placement parameters
-4. Click **Auto-Place Cameras**
+2. Optionally check **Maximize Viewpoint Entropy** — orients cameras toward detected objects:
+   - If objects were detected in the current session, they are used automatically
+   - Otherwise, load a `detected_objects.json` file from a previous session
+3. Optionally check **Constrain to Volume** — limits camera placement to a specific room/zone:
+   - If volumes were drawn in the current session, they are available automatically
+   - Otherwise, load a `connectivity_graph.json` file and select a volume from the dropdown
+4. Optionally expand **Advanced Settings** to adjust placement parameters (eye height, wall distance, spacing) or apply presets (Relaxed/Conservative/Dense)
+5. Click **Auto-Place Cameras**
+
+When constraint/entropy options are enabled, the corresponding volumes and OOBBs are visualized in the 3D viewport.
 
 ### Managing Cameras
 - **Click** a camera in the list to select it

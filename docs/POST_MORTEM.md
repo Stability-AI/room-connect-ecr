@@ -70,6 +70,9 @@ Room Connect is an interactive web-based 3D application for interior scene analy
 ### Key decisions
 - All computation runs client-side (no backend needed)
 - Simple string matching chosen over regex for usability
+- Incremental detection: multiple runs accumulate results (deduplicated by name + position)
+- Cull only affects the latest batch — previously committed objects are protected
+- Exported JSON can be re-loaded in the Rendering tab for entropy-based camera orientation
 
 ---
 
@@ -109,6 +112,9 @@ Room Connect is an interactive web-based 3D application for interior scene analy
 - Validates: inside mesh (raycast up + down), minimum distance from surfaces, minimum spacing between cameras
 - Orientation: looks toward scene center at waist height; with "Maximize Viewpoint Entropy" enabled, orients toward the cluster of detected OOBB centers maximizing objects in FOV
 - Advanced parameters: eye height ratio, min wall distance, min spacing (with Relaxed/Conservative/Dense presets)
+- **Constrain to Volume**: load a `connectivity_graph.json` or use session volumes to restrict camera sampling to a specific room/zone bounding box
+- **Session continuity**: volumes from Connectivity tab and objects from Detection tab are automatically available in Rendering tab without needing to re-export and re-load JSON files
+- Loaded volumes visualized as translucent blue AABBs (selected = green); loaded objects as orange OOBB wireframes
 
 ### Key Technical Challenge: Frustum Alignment
 - Quaternions computed outside R3F render loop produced "flipped" orientations
