@@ -552,6 +552,7 @@ class CyclesRenderer:
             bpy.ops.object.camera_add()
             cam_obj = bpy.context.object
             cam_obj.name = f"RenderCam_{idx}"
+            cam_obj.data.sensor_fit = 'VERTICAL'
             cam_obj.data.angle = (cam_data.get("fov", 49.13) * 3.14159265) / 180.0
             cam_obj.data.clip_start = 0.1
             cam_obj.data.clip_end = 10000
