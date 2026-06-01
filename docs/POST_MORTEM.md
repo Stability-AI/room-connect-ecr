@@ -189,4 +189,4 @@ docker run -p 8080:8080 room-connect
 
 5. **Override lighting for interiors**: Interior scenes with embedded lights render too dark without boost. A bright world environment (strength 15.0) + 6 scaled area lights from all directions provides even architectural illumination.
 
-6. **BVH for spatial queries in browser**: `three-mesh-bvh` enables the same proximity testing as Trimesh/Blender BVHTree, running entirely client-side at interactive rates on 700MB scenes.
+6. **BVH for spatial queries in browser**: `three-mesh-bvh` enables the same proximity testing as Trimesh/Blender BVHTree, running entirely client-side at interactive rates on tested 700MB GLB-imported scene.
