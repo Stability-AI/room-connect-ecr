@@ -79,7 +79,7 @@ Room Connect is an interactive web-based 3D application for interior scene analy
 ## Phase 3: Rendering Pipeline
 
 ### GLB Upload (Frontend → Backend)
-- **Decision**: Option B — Chunked streaming upload
+- Decided to use chunked streaming upload
 - Frontend slices file into 10MB chunks, sends sequentially via fetch
 - Backend writes chunks to disk via `request.stream` (never buffers full file in RAM)
 - Merge endpoint assembles final file
