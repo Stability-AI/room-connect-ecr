@@ -76,7 +76,7 @@ Room Connect is an interactive web-based 3D application for interior scene analy
 
 ---
 
-## Phase 2: Rendering Pipeline
+## Phase 3: Rendering Pipeline
 
 ### GLB Upload (Frontend → Backend)
 - **Decision**: Option B — Chunked streaming upload
