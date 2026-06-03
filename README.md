@@ -119,3 +119,21 @@ room-connect/
 | Frontend only | `cd frontend && npm install && npm run dev` |
 | Backend only | `cd backend && pip install -r requirements.txt && python app.py` |
 | Production build | `docker build -t room-connect . && docker run -p 8080:8080 room-connect` |
+
+## Troubleshooting
+
+### "Render Views" button greyed out / upload fails with 500
+
+Large GLB files (300–700MB) accumulate in the Docker container. If the container disk fills up, uploads fail silently and `sceneFileId` never gets set.
+
+**Fix:** Clean up old uploads inside the container:
+```bash
+docker-compose exec backend sh -c "rm -rf /tmp/room-connect-uploads/* /tmp/room-connect-renders/*"
+```
+
+Then reload the page and re-load the scene.
+
+To prevent this, periodically prune Docker:
+```bash
+docker system prune -f
+```
