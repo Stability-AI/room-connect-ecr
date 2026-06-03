@@ -224,7 +224,7 @@ function FovController({ fovOverride }) {
   return null;
 }
 
-function CameraViewSwitcher({ activeCameraView }) {
+function CameraViewSwitcher({ activeCameraView, controlsRef }) {
   const { camera } = useThree();
 
   useEffect(() => {
@@ -234,7 +234,16 @@ function CameraViewSwitcher({ activeCameraView }) {
     camera.position.set(position[0], position[1], position[2]);
     const q = new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
     camera.quaternion.copy(q);
-  }, [activeCameraView, camera]);
+
+    // Update OrbitControls target to a point in front of the camera
+    // so the controls don't override the quaternion on the next frame
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+    const target = new THREE.Vector3().copy(camera.position).add(forward.multiplyScalar(100));
+    if (controlsRef?.current) {
+      controlsRef.current.target.copy(target);
+      controlsRef.current.update();
+    }
+  }, [activeCameraView, camera, controlsRef]);
 
   return null;
 }
@@ -275,6 +284,7 @@ export default function SceneViewer({
 }) {
   const [sceneHasLights, setSceneHasLights] = useState(false);
   const sceneObjRef = useRef(null);
+  const controlsRef = useRef(null);
 
   const handleSceneReady = useCallback((scene) => {
     sceneObjRef.current = scene;
@@ -312,7 +322,7 @@ export default function SceneViewer({
 
         <CameraRefExposer onCameraRef={onCameraRef} />
         <FovController fovOverride={fovOverride} />
-        {activeCameraView && <CameraViewSwitcher activeCameraView={activeCameraView} />}
+        {activeCameraView && <CameraViewSwitcher activeCameraView={activeCameraView} controlsRef={controlsRef} />}
 
         {cameras.map((cam) => (
           <CameraFrustum
@@ -381,7 +391,7 @@ export default function SceneViewer({
 
         {isDrawing && <DrawingVolume onVolumeCreated={onVolumeCreated} />}
 
-        <OrbitControls makeDefault enabled={!isDrawing && !editingVolumeId} />
+        <OrbitControls ref={controlsRef} makeDefault enabled={!isDrawing && !editingVolumeId} />
         <gridHelper args={[50, 50, "#333", "#222"]} />
 
         <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
