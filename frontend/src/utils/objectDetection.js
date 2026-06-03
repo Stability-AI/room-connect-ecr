@@ -18,8 +18,13 @@ export function filterMeshesByName(scene, filterTerms, exclusive = false) {
   scene.traverse((child) => {
     if (!child.isMesh) return;
 
-    const name = (child.name || "").toLowerCase();
-    const matches = terms.some((term) => name.includes(term));
+    // Check the mesh name, its parent name (Blender object name), and ancestors
+    const meshName = (child.name || "").toLowerCase();
+    const parentName = (child.parent?.name || "").toLowerCase();
+    const grandparentName = (child.parent?.parent?.name || "").toLowerCase();
+    const combinedName = `${meshName} ${parentName} ${grandparentName}`;
+
+    const matches = terms.some((term) => combinedName.includes(term));
 
     if (exclusive ? !matches : matches) {
       meshes.push(child);
