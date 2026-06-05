@@ -6,7 +6,7 @@ import VolumeList from "./components/VolumeList";
 import VolumeDialog from "./components/VolumeDialog";
 import ObjectDetectionPanel from "./components/ObjectDetectionPanel";
 import RenderingPanel from "./components/RenderingPanel";
-import { detectObjects, cullOverlappingOOBBs } from "./utils/objectDetection";
+import { detectObjects, cullOverlappingOOBBs, mergeOverlappingOOBBs } from "./utils/objectDetection";
 import { uploadSceneChunked } from "./utils/sceneUpload";
 import { v4 as uuidv4 } from "uuid";
 import { BLENDER_FOV } from "./components/CameraFrustum";
@@ -112,11 +112,19 @@ export default function App() {
 
   const handleCullSelection = useCallback((threshold) => {
     setDetectedObjects((prev) => {
-      // Only cull within the new batch (after committedCount), leave committed objects untouched
       const committed = prev.slice(0, committedCount);
       const newBatch = prev.slice(committedCount);
       const culled = cullOverlappingOOBBs(newBatch, threshold);
       return [...committed, ...culled];
+    });
+  }, [committedCount]);
+
+  const handleMergeSelection = useCallback((threshold) => {
+    setDetectedObjects((prev) => {
+      const committed = prev.slice(0, committedCount);
+      const newBatch = prev.slice(committedCount);
+      const merged = mergeOverlappingOOBBs(newBatch, threshold);
+      return [...committed, ...merged];
     });
   }, [committedCount]);
 
@@ -424,6 +432,7 @@ export default function App() {
             onToggleOOBBs={handleToggleOOBBs}
             onClear={handleClearObjects}
             onCull={handleCullSelection}
+            onMerge={handleMergeSelection}
             onExport={handleExportObjects}
             detectedObjects={detectedObjects}
             showOOBBs={showOOBBs}

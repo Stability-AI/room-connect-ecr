@@ -171,3 +171,70 @@ export function cullOverlappingOOBBs(objects, threshold = 0.95) {
 
   return kept;
 }
+
+/**
+ * Merge smaller overlapping OOBBs into the larger enclosing OOBB.
+ * The larger box is expanded to fully enclose absorbed smaller boxes.
+ * Iterates until no more merges occur.
+ *
+ * @param {Array} objects - Array of OOBB data objects
+ * @param {number} threshold - Overlap threshold (default 0.5)
+ * @returns {Array} Array with merged OOBBs
+ */
+export function mergeOverlappingOOBBs(objects, threshold = 0.5) {
+  if (objects.length <= 1) return [...objects];
+
+  let current = [...objects];
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    const sorted = current.sort((a, b) => oobbVolume(b) - oobbVolume(a));
+    const merged = [];
+    const absorbed = new Set();
+
+    for (let i = 0; i < sorted.length; i++) {
+      if (absorbed.has(i)) continue;
+
+      let box = { ...sorted[i] };
+      let didMerge = false;
+
+      for (let j = i + 1; j < sorted.length; j++) {
+        if (absorbed.has(j)) continue;
+
+        if (isContainedOrColocated(sorted[j], box, threshold)) {
+          // Expand box to enclose the smaller one
+          box = expandToEnclose(box, sorted[j]);
+          absorbed.add(j);
+          didMerge = true;
+        }
+      }
+
+      if (didMerge) changed = true;
+      merged.push(box);
+    }
+
+    current = merged;
+  }
+
+  return current;
+}
+
+/**
+ * Expand an OOBB to fully enclose another OOBB.
+ * Computes the axis-aligned union of both boxes.
+ */
+function expandToEnclose(larger, smaller) {
+  const minX = Math.min(larger.center[0] - larger.halfExtents[0], smaller.center[0] - smaller.halfExtents[0]);
+  const maxX = Math.max(larger.center[0] + larger.halfExtents[0], smaller.center[0] + smaller.halfExtents[0]);
+  const minY = Math.min(larger.center[1] - larger.halfExtents[1], smaller.center[1] - smaller.halfExtents[1]);
+  const maxY = Math.max(larger.center[1] + larger.halfExtents[1], smaller.center[1] + smaller.halfExtents[1]);
+  const minZ = Math.min(larger.center[2] - larger.halfExtents[2], smaller.center[2] - smaller.halfExtents[2]);
+  const maxZ = Math.max(larger.center[2] + larger.halfExtents[2], smaller.center[2] + smaller.halfExtents[2]);
+
+  return {
+    ...larger,
+    center: [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2],
+    halfExtents: [(maxX - minX) / 2, (maxY - minY) / 2, (maxZ - minZ) / 2],
+  };
+}

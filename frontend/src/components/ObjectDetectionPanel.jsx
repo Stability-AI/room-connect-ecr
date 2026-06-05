@@ -7,6 +7,7 @@ export default function ObjectDetectionPanel({
   onToggleOOBBs,
   onClear,
   onCull,
+  onMerge,
   onExport,
   detectedObjects,
   showOOBBs,
@@ -15,6 +16,8 @@ export default function ObjectDetectionPanel({
   const [exclusive, setExclusive] = useState(false);
   const [showCullDialog, setShowCullDialog] = useState(false);
   const [cullThreshold, setCullThreshold] = useState(0.5);
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [mergeThreshold, setMergeThreshold] = useState(0.5);
 
   const handleDetect = () => {
     if (!filterTerms.trim()) return;
@@ -30,6 +33,11 @@ export default function ObjectDetectionPanel({
   const handleCullConfirm = () => {
     onCull(cullThreshold);
     setShowCullDialog(false);
+  };
+
+  const handleMergeConfirm = () => {
+    onMerge(mergeThreshold);
+    setShowMergeDialog(false);
   };
 
   return (
@@ -108,6 +116,13 @@ export default function ObjectDetectionPanel({
               Cull Selection
             </button>
             <button
+              className="btn btn-toggle"
+              onClick={() => setShowMergeDialog(true)}
+              disabled={detectedObjects.length <= 1}
+            >
+              Merge Selection
+            </button>
+            <button
               className="btn btn-secondary"
               onClick={onClear}
               disabled={detectedObjects.length === 0}
@@ -175,6 +190,47 @@ export default function ObjectDetectionPanel({
               </button>
               <button className="btn btn-primary" onClick={handleCullConfirm}>
                 Apply Cull
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMergeDialog && (
+        <div className="dialog-overlay">
+          <div className="dialog">
+            <h2>Merge Sensitivity</h2>
+            <div className="dialog-field">
+              <label>
+                Threshold: <strong>{mergeThreshold.toFixed(2)}</strong>
+              </label>
+              <input
+                type="range"
+                className="cull-slider"
+                min="0"
+                max="1"
+                step="0.01"
+                value={mergeThreshold}
+                onChange={(e) => setMergeThreshold(parseFloat(e.target.value))}
+              />
+              <div className="slider-labels">
+                <span>0.0 (aggressive)</span>
+                <span>1.0 (conservative)</span>
+              </div>
+              <p className="panel-hint">
+                Lower values merge more aggressively (absorb partially overlapping OOBBs).
+                Higher values require nearly complete containment before merging.
+              </p>
+            </div>
+            <div className="dialog-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowMergeDialog(false)}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={handleMergeConfirm}>
+                Apply Merge
               </button>
             </div>
           </div>
