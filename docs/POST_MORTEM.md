@@ -72,6 +72,7 @@ Room Connect is an interactive web-based 3D application for interior scene analy
 - Simple string matching chosen over regex for usability
 - Incremental detection: multiple runs accumulate results (deduplicated by name + position)
 - Cull only affects the latest batch — previously committed objects are protected
+- Merge Selection: absorbs smaller overlapping OOBBs into the enclosing larger one, expanding it to cover the union (iterates until stable)
 - Exported JSON can be re-loaded in the Rendering tab for entropy-based camera orientation
 
 ---

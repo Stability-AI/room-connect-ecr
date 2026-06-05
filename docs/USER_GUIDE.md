@@ -78,7 +78,8 @@ You can run detection multiple times with different terms — each new detection
 
 ### Managing Results
 - **Show/Hide OOBBs**: Toggle visibility
-- **Cull Selection**: Remove smaller boxes nested inside larger ones (adjustable sensitivity slider). Only affects the latest detection batch — previously committed objects are protected from culling.
+- **Cull Selection**: Remove smaller boxes nested inside larger ones (adjustable sensitivity slider). Only affects the latest detection batch — previously committed objects are protected.
+- **Merge Selection**: Absorb smaller overlapping OOBBs into the larger enclosing one, expanding it to cover the union of both volumes. Uses the same sensitivity slider and batch protection as cull.
 - **Clear OOBBs**: Remove ALL detections and reset the list
 - **Export Objects (JSON)**: Download OOBB data for the full accumulated list (center, half-extents, rotation matrix, world position)
 
