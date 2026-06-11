@@ -21,6 +21,7 @@ export default function RenderingPanel({
   onRenderSizeChange,
   onRenderOverlaysChange,
   onFovChange,
+  propFovOverride,
   onLoadCameras,
   onRenderSelected,
   onAddLight,
@@ -38,6 +39,20 @@ export default function RenderingPanel({
   const [minSpacingRatio, setMinSpacingRatio] = useState(0.05);
   const [renderWidth, setRenderWidthLocal] = useState(propRenderWidth || 1920);
   const [renderHeight, setRenderHeightLocal] = useState(propRenderHeight || 1080);
+
+  // Sync local state when parent updates (e.g. from loading camera JSON)
+  useEffect(() => {
+    if (propRenderWidth) setRenderWidthLocal(propRenderWidth);
+  }, [propRenderWidth]);
+  useEffect(() => {
+    if (propRenderHeight) setRenderHeightLocal(propRenderHeight);
+  }, [propRenderHeight]);
+  useEffect(() => {
+    if (propFovOverride && propFovOverride !== customFov) {
+      setOverrideFov(true);
+      setCustomFov(propFovOverride);
+    }
+  }, [propFovOverride]);
 
   const setRenderWidth = (w) => {
     setRenderWidthLocal(w);

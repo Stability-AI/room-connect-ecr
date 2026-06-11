@@ -526,6 +526,7 @@ export default function App() {
             onRenderSizeChange={(w, h) => { setRenderWidth(w); setRenderHeight(h); }}
             onRenderOverlaysChange={setRenderOverlays}
             onFovChange={setFovOverride}
+            propFovOverride={fovOverride}
           />
         );
       default:
