@@ -562,11 +562,11 @@ class CyclesRenderer:
         Lights list (optional): each has position, quaternion, intensity, size.
         """
         self.log_buffer = []
+        self._ensure_lighting(override_lighting=override_lighting, brightness=lighting_brightness)
 
-        # Add user-placed area lights to the scene
+        # Add user-placed lights AFTER override lighting (so they don't get removed)
         if lights:
             self._add_user_lights(lights)
-        self._ensure_lighting(override_lighting=override_lighting, brightness=lighting_brightness)
 
         results = {"files": [], "logs": []}
         total = len(cameras)

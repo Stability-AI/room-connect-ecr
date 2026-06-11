@@ -748,7 +748,12 @@ export default function RenderingPanel({
               <input
                 type="checkbox"
                 checked={overrideLighting}
-                onChange={(e) => setOverrideLighting(e.target.checked)}
+                onChange={(e) => {
+                  setOverrideLighting(e.target.checked);
+                  if (!e.target.checked && onBrightnessChange) {
+                    onBrightnessChange(1.0); // Reset to default brightness
+                  }
+                }}
               />
               <span>Override lighting</span>
             </label>

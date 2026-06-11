@@ -359,11 +359,16 @@ export default function SceneViewer({
           <OOBBOverlay key={`oobb-${i}`} oobb={obj} />
         ))}
 
-        {/* Scene lights visualization */}
+        {/* Scene lights: visualization + actual light emission */}
         {sceneLights.map((light) => {
           const q = new THREE.Quaternion(light.quaternion[0], light.quaternion[1], light.quaternion[2], light.quaternion[3]);
           return (
             <group key={light.id} position={light.position} quaternion={q}>
+              <pointLight
+                intensity={light.intensity * 0.01}
+                distance={light.size * 50}
+                color="#ffffff"
+              />
               <mesh renderOrder={8}>
                 <planeGeometry args={[light.size, light.size]} />
                 <meshBasicMaterial color="#ffff44" transparent opacity={0.3} side={THREE.DoubleSide} depthWrite={false} />
