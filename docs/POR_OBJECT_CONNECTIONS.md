@@ -96,7 +96,7 @@ All OOBBs are computed at the time of relationship definition (using the same OO
 - Store relationships in App state, pass to 3D overlay for visualization
 
 ### Tab Integration
-- Tab order: Connectivity → Object Detection → **Connections** → Rendering
+- Tab order: Connectivity → Object Detection → **Object Connectivity** → Rendering
 - Shared 3D canvas; overlays toggle per active tab
 
 ### Room Volume Assignment
