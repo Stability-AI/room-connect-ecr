@@ -359,24 +359,42 @@ export default function SceneViewer({
           <OOBBOverlay key={`oobb-${i}`} oobb={obj} />
         ))}
 
-        {/* Scene lights: yellow directional line gizmo (no lighting preview) */}
+        {/* Scene lights: yellow cone gizmo showing direction + angle */}
         {sceneLights.map((light) => {
-          const pos = light.position;
-          const dir = light.direction;
-          const endPoint = [
-            pos[0] + dir[0] * 15,
-            pos[1] + dir[1] * 15,
-            pos[2] + dir[2] * 15,
-          ];
+          const pos = new THREE.Vector3(light.position[0], light.position[1], light.position[2]);
+          const dir = new THREE.Vector3(light.direction[0], light.direction[1], light.direction[2]).normalize();
+          const length = 12;
+          const halfAngle = ((light.angle || 120) / 2) * (Math.PI / 180);
+          const radius = Math.tan(halfAngle) * length;
+
+          // Cone center line endpoint
+          const end = pos.clone().add(dir.clone().multiplyScalar(length));
+
+          // Compute perpendicular vectors for cone edges
+          const up = new THREE.Vector3(0, 1, 0);
+          let right = new THREE.Vector3().crossVectors(dir, up).normalize();
+          if (right.length() < 0.01) right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(1, 0, 0)).normalize();
+          const coneUp = new THREE.Vector3().crossVectors(right, dir).normalize();
+
+          const edge1 = end.clone().add(right.clone().multiplyScalar(radius));
+          const edge2 = end.clone().add(right.clone().multiplyScalar(-radius));
+          const edge3 = end.clone().add(coneUp.clone().multiplyScalar(radius));
+          const edge4 = end.clone().add(coneUp.clone().multiplyScalar(-radius));
+
           const verts = new Float32Array([
-            pos[0], pos[1], pos[2],
-            endPoint[0], endPoint[1], endPoint[2],
+            pos.x, pos.y, pos.z, end.x, end.y, end.z,
+            pos.x, pos.y, pos.z, edge1.x, edge1.y, edge1.z,
+            pos.x, pos.y, pos.z, edge2.x, edge2.y, edge2.z,
+            pos.x, pos.y, pos.z, edge3.x, edge3.y, edge3.z,
+            pos.x, pos.y, pos.z, edge4.x, edge4.y, edge4.z,
+            edge1.x, edge1.y, edge1.z, edge2.x, edge2.y, edge2.z,
+            edge3.x, edge3.y, edge3.z, edge4.x, edge4.y, edge4.z,
           ]);
           const geo = new THREE.BufferGeometry();
           geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
           return (
             <lineSegments key={light.id} geometry={geo} renderOrder={9}>
-              <lineBasicMaterial color="#ffff00" depthTest={false} linewidth={2} />
+              <lineBasicMaterial color="#ffff00" depthTest={false} />
             </lineSegments>
           );
         })}

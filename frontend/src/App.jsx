@@ -321,12 +321,16 @@ export default function App() {
       direction: [forward.x, forward.y, forward.z],
       quaternion: [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w],
       intensity: 500,
-      size: 5,
+      angle: 120,
     }]);
   }, []);
 
   const handleUpdateLightIntensity = useCallback((lightId, intensity) => {
     setSceneLights((prev) => prev.map((l) => l.id === lightId ? { ...l, intensity } : l));
+  }, []);
+
+  const handleUpdateLightAngle = useCallback((lightId, angle) => {
+    setSceneLights((prev) => prev.map((l) => l.id === lightId ? { ...l, angle } : l));
   }, []);
 
   const handleDeleteLight = useCallback((lightId) => {
@@ -516,6 +520,7 @@ export default function App() {
             onAddLight={handleAddLight}
             sceneLights={sceneLights}
             onUpdateLightIntensity={handleUpdateLightIntensity}
+            onUpdateLightAngle={handleUpdateLightAngle}
             onDeleteLight={handleDeleteLight}
             exportCameraData={getCameraExportData}
             hasDetectedObjects={detectedObjects.length > 0}

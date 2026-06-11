@@ -27,6 +27,7 @@ export default function RenderingPanel({
   onAddLight,
   sceneLights = [],
   onUpdateLightIntensity,
+  onUpdateLightAngle,
   onDeleteLight,
   sessionVolumes = [],
   sessionDetectedObjects = [],
@@ -653,6 +654,7 @@ export default function RenderingPanel({
                     <div style={{ flex: 1 }}>
                       <span className="object-name">Light {i + 1}</span>
                       <div className="panel-row" style={{ marginTop: 4 }}>
+                        <span className="param-value" style={{ minWidth: 20 }}>W</span>
                         <input
                           type="range"
                           className="cull-slider"
@@ -664,6 +666,20 @@ export default function RenderingPanel({
                           style={{ flex: 1 }}
                         />
                         <span className="param-value">{light.intensity}</span>
+                      </div>
+                      <div className="panel-row" style={{ marginTop: 2 }}>
+                        <span className="param-value" style={{ minWidth: 20 }}>°</span>
+                        <input
+                          type="range"
+                          className="cull-slider"
+                          min="10"
+                          max="170"
+                          step="5"
+                          value={light.angle || 120}
+                          onChange={(e) => onUpdateLightAngle(light.id, parseInt(e.target.value))}
+                          style={{ flex: 1 }}
+                        />
+                        <span className="param-value">{light.angle || 120}°</span>
                       </div>
                     </div>
                     <button

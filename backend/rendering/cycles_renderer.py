@@ -302,8 +302,9 @@ class CyclesRenderer:
             bpy.ops.object.light_add(type="SPOT", location=blender_pos)
             light = bpy.context.object
             light.name = f"UserLight_{i}"
+            angle = light_data.get("angle", 120)
             light.data.energy = intensity * 10  # Spot lights need high energy for interiors
-            light.data.spot_size = math.radians(120)  # Wide cone to cover the view
+            light.data.spot_size = math.radians(angle)
             light.data.spot_blend = 0.5  # Soft edges
             light.data.shadow_soft_size = 2.0
 
