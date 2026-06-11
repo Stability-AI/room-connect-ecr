@@ -84,10 +84,11 @@ All OOBBs are computed at the time of relationship definition (using the same OO
 - `ConnectionOverlay.jsx` — 3D OOBB overlays with color coding (orange/blue/green)
 
 ### State
-- `relationships`: Array of `{ objectName, objectOOBB, parents: [], children: [] }`
+- `relationships`: Array of `{ objectName, objectOOBB, roomVolume, parents: [], children: [] }`
 - `selectionMode`: `"idle"` | `"selecting"` | `"selecting-related"`
 - `currentSelection`: mesh(es) currently picked
 - `multiSelect`: boolean (shift held)
+- `loadedVolumes`: room volume definitions (from session or loaded JSON)
 
 ### Interaction
 - Use Three.js Raycaster on click to pick meshes in the scene
@@ -95,5 +96,62 @@ All OOBBs are computed at the time of relationship definition (using the same OO
 - Store relationships in App state, pass to 3D overlay for visualization
 
 ### Tab Integration
-- Add a 4th tab: "Connections" (after Rendering)
+- Tab order: Connectivity → Object Detection → **Connections** → Rendering
 - Shared 3D canvas; overlays toggle per active tab
+
+### Room Volume Assignment
+
+Objects are automatically assigned to a room volume based on spatial containment:
+
+- User can load a `connectivity_graph.json` (room volumes) in the Connections panel OR the Rendering panel
+- If volumes are defined in the current session (Connectivity tab), they are available automatically
+- For each object with a defined relationship, the system checks which volume its OOBB center falls inside
+- If an object spans multiple volumes (center near boundary), it is assigned to the volume it is mostly inside of (largest overlap by volume intersection)
+- Room volume assignment is included in the exported connections JSON
+
+#### Containment check:
+```
+For each object:
+  For each volume:
+    Check if object center is inside volume AABB
+    If inside multiple: compute overlap ratio, pick highest
+  Assign volume with best containment (or "unassigned" if outside all)
+```
+
+### Updated Export Format
+
+```json
+{
+  "scene": "filename.glb",
+  "relationships": [
+    {
+      "object": {
+        "name": "Desk_01",
+        "oobb": {
+          "center": [x, y, z],
+          "halfExtents": [hx, hy, hz],
+          "rotation": [r00, r01, ..., r22]
+        },
+        "roomVolume": {
+          "id": "uuid",
+          "name": "Office A"
+        }
+      },
+      "parents": [
+        {
+          "name": "Room_A",
+          "oobb": { ... },
+          "roomVolume": { ... }
+        }
+      ],
+      "children": [
+        {
+          "name": "Monitor_01",
+          "oobb": { ... },
+          "roomVolume": { ... }
+        }
+      ]
+    }
+  ]
+}
+```
