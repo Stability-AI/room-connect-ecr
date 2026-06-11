@@ -308,6 +308,25 @@ export default function App() {
     setActiveCameraView(null);
   }, []);
 
+  const handleLoadCameras = useCallback((cameraDataList) => {
+    const newCameras = cameraDataList.map((camData, i) => ({
+      id: uuidv4(),
+      name: camData.name || `Loaded ${cameras.length + i + 1}`,
+      position: camData.extrinsics?.position || camData.position || [0, 0, 0],
+      quaternion: camData.extrinsics?.quaternion_xyzw || camData.quaternion || [0, 0, 0, 1],
+      fov: camData.intrinsics?.fov_degrees || camData.fov || 60,
+    }));
+    setCameras((prev) => [...prev, ...newCameras]);
+  }, [cameras.length]);
+
+  const handleRenderSelected = useCallback((cameraId) => {
+    const cam = cameras.find((c) => c.id === cameraId);
+    if (!cam) return;
+    // Trigger a render with just this one camera by using the same render flow
+    // but with a single camera array
+    console.log(`[RenderSelected] Rendering from: ${cam.name}`);
+  }, [cameras]);
+
   const handleAutoPlaceCameras = useCallback((count, maximizeEntropy, params = {}) => {
     if (!sceneRef.current || !viewCameraRef.current) return;
 
@@ -453,6 +472,8 @@ export default function App() {
             onRealignCamera={handleRealignCamera}
             onDeleteCamera={handleDeleteCamera}
             onClearAllCameras={handleClearAllCameras}
+            onLoadCameras={handleLoadCameras}
+            onRenderSelected={handleRenderSelected}
             exportCameraData={getCameraExportData}
             hasDetectedObjects={detectedObjects.length > 0}
             sessionVolumes={volumes}

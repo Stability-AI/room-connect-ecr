@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import * as THREE from "three";
 
 export default function RenderingPanel({
   hasScene,
@@ -20,6 +21,8 @@ export default function RenderingPanel({
   onRenderSizeChange,
   onRenderOverlaysChange,
   onFovChange,
+  onLoadCameras,
+  onRenderSelected,
   sessionVolumes = [],
   sessionDetectedObjects = [],
 }) {
@@ -128,6 +131,24 @@ export default function RenderingPanel({
     e.target.value = "";
   };
 
+  const handleLoadCameras = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (data.cameras && onLoadCameras) {
+          onLoadCameras(data.cameras);
+        }
+      } catch (err) {
+        console.error("Failed to parse camera data:", err);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
   const handleLoadObjects = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -139,12 +160,26 @@ export default function RenderingPanel({
         // Normalize: exported format has nested oobb field, internal format is flat
         const normalized = rawObjects.map((obj) => {
           if (obj.oobb) {
+            // Convert 3x3 rotation matrix to quaternion
+            let quat = [0, 0, 0, 1];
+            if (obj.oobb.rotation && obj.oobb.rotation.length === 9) {
+              const r = obj.oobb.rotation;
+              const m = new THREE.Matrix4();
+              m.set(
+                r[0], r[1], r[2], 0,
+                r[3], r[4], r[5], 0,
+                r[6], r[7], r[8], 0,
+                0, 0, 0, 1
+              );
+              const q = new THREE.Quaternion().setFromRotationMatrix(m);
+              quat = [q.x, q.y, q.z, q.w];
+            }
             return {
               name: obj.name,
               center: obj.oobb.center,
               halfExtents: obj.oobb.halfExtents,
               rotation: obj.oobb.rotation,
-              quaternion: obj.quaternion || [0, 0, 0, 1],
+              quaternion: quat,
               worldPosition: obj.worldPosition,
               worldScale: obj.worldScale,
             };
@@ -245,6 +280,73 @@ export default function RenderingPanel({
             } else if (eventType === "error") {
               const err = JSON.parse(data);
               setRenderStatus(`Render failed: ${err.error}`);
+            }
+            eventType = null;
+          }
+        }
+      }
+    } catch (err) {
+      setRenderStatus(`Render failed: ${err.message}`);
+    } finally {
+      setIsRendering(false);
+    }
+  };
+
+  const handleRenderSelected = async () => {
+    if (!sceneFileId || !selectedCameraId) return;
+    const cam = cameras.find((c) => c.id === selectedCameraId);
+    if (!cam) return;
+
+    setIsRendering(true);
+    setRenderStatus(`Rendering ${cam.name}...`);
+    setRenderResults(null);
+    setRenderLogs([]);
+
+    try {
+      const response = await fetch("/api/render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneId: sceneFileId,
+          width: renderWidth,
+          height: renderHeight,
+          samples: samples,
+          generateDepthmap: generateDepthmap,
+          overrideLighting: overrideLighting,
+          lightingBrightness: lightingBrightness,
+          includeBlend: includeBlend,
+          cameras: [{
+            id: cam.id,
+            name: cam.name,
+            position: cam.position,
+            quaternion: cam.quaternion,
+            fov: overrideFov ? customFov : cam.fov,
+          }],
+        }),
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        let eventType = null;
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            const data = line.slice(6);
+            if (eventType === "log") setRenderLogs((prev) => [...prev, data]);
+            else if (eventType === "result") {
+              setRenderResults(JSON.parse(data));
+              setRenderStatus("Render complete!");
+            } else if (eventType === "error") {
+              setRenderStatus(`Render failed: ${JSON.parse(data).error}`);
             }
             eventType = null;
           }
@@ -446,6 +548,15 @@ export default function RenderingPanel({
               <button className="btn btn-primary" onClick={onPlaceCamera}>
                 Place at View
               </button>
+              <label className="btn btn-toggle" style={{ textAlign: "center", cursor: "pointer" }}>
+                Load Cameras
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleLoadCameras}
+                  style={{ display: "none" }}
+                />
+              </label>
             </div>
             {isGenerating && (
               <div className="barber-pole-container" style={{ marginTop: 6 }}>
@@ -487,6 +598,13 @@ export default function RenderingPanel({
                     </button>
                     <button className="btn btn-toggle" onClick={onRealignCamera}>
                       Realign to View
+                    </button>
+                    <button
+                      className="btn btn-accent"
+                      onClick={() => handleRenderSelected()}
+                      disabled={isRendering || !sceneFileId}
+                    >
+                      Render Selected
                     </button>
                   </div>
                 )}
