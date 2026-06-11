@@ -342,6 +342,20 @@ export default function App() {
       fov: camData.intrinsics?.fov_degrees || camData.fov || 60,
     }));
     setCameras((prev) => [...prev, ...newCameras]);
+
+    // Derive resolution and FOV from the first loaded camera
+    if (cameraDataList.length > 0) {
+      const first = cameraDataList[0];
+      const fov = first.intrinsics?.fov_degrees || first.fov;
+      if (fov) {
+        setFovOverride(fov);
+      }
+      const pp = first.intrinsics?.principal_point;
+      if (pp && pp.cx && pp.cy) {
+        setRenderWidth(Math.round(pp.cx * 2));
+        setRenderHeight(Math.round(pp.cy * 2));
+      }
+    }
   }, [cameras.length]);
 
   const handleRenderSelected = useCallback((cameraId) => {
