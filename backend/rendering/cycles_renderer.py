@@ -286,6 +286,33 @@ class CyclesRenderer:
         self._capture_log(f"Created camera at {list(cam_pos)} looking at {list(center)}")
         return cam
 
+    def _add_user_lights(self, lights):
+        """Add user-placed area lights to the Blender scene."""
+        import math
+        from mathutils import Quaternion as MQuaternion, Vector
+
+        yup_to_zup = MQuaternion((math.cos(math.pi / 4), math.sin(math.pi / 4), 0, 0))
+
+        for i, light_data in enumerate(lights):
+            pos = light_data["position"]
+            q = light_data.get("quaternion", [0, 0, 0, 1])
+            intensity = light_data.get("intensity", 500)
+            size = light_data.get("size", 5)
+
+            bpy.ops.object.light_add(type="AREA", location=(pos[0], -pos[2], pos[1]))
+            light = bpy.context.object
+            light.name = f"UserLight_{i}"
+            light.data.energy = intensity
+            light.data.size = size
+
+            # Convert quaternion from Y-up to Z-up
+            threejs_quat = MQuaternion((q[3], q[0], q[1], q[2]))
+            blender_quat = yup_to_zup @ threejs_quat
+            light.rotation_mode = "QUATERNION"
+            light.rotation_quaternion = blender_quat
+
+        self._capture_log(f"Added {len(lights)} user-placed area lights")
+
     def _ensure_lighting(self, override_lighting: bool = False, brightness: float = 1.5):
         """Add or override lighting in the scene."""
         has_lights = any(obj.type == "LIGHT" for obj in bpy.data.objects)
@@ -528,12 +555,17 @@ class CyclesRenderer:
         results["logs"] = self.log_buffer
         return results
 
-    def render_all_views(self, cameras: list, generate_depthmap: bool = False, override_lighting: bool = False, lighting_brightness: float = 1.5, include_blend: bool = False) -> dict:
+    def render_all_views(self, cameras: list, generate_depthmap: bool = False, override_lighting: bool = False, lighting_brightness: float = 1.5, include_blend: bool = False, lights: list = None) -> dict:
         """
         Render from multiple camera positions.
         Each camera dict has: id, name, position, quaternion, fov.
+        Lights list (optional): each has position, quaternion, intensity, size.
         """
         self.log_buffer = []
+
+        # Add user-placed area lights to the scene
+        if lights:
+            self._add_user_lights(lights)
         self._ensure_lighting(override_lighting=override_lighting, brightness=lighting_brightness)
 
         results = {"files": [], "logs": []}

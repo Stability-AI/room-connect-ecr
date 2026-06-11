@@ -42,6 +42,9 @@ export default function App() {
   const [sceneFileId, setSceneFileId] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(null);
 
+  // Scene lights state
+  const [sceneLights, setSceneLights] = useState([]);
+
   // Camera management state
   const [cameras, setCameras] = useState([]);
   const [selectedCameraId, setSelectedCameraId] = useState(null);
@@ -308,6 +311,28 @@ export default function App() {
     setActiveCameraView(null);
   }, []);
 
+  const handleAddLight = useCallback(() => {
+    if (!viewCameraRef.current) return;
+    const cam = viewCameraRef.current;
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    setSceneLights((prev) => [...prev, {
+      id: uuidv4(),
+      position: [cam.position.x, cam.position.y, cam.position.z],
+      direction: [forward.x, forward.y, forward.z],
+      quaternion: [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w],
+      intensity: 500,
+      size: 5,
+    }]);
+  }, []);
+
+  const handleUpdateLightIntensity = useCallback((lightId, intensity) => {
+    setSceneLights((prev) => prev.map((l) => l.id === lightId ? { ...l, intensity } : l));
+  }, []);
+
+  const handleDeleteLight = useCallback((lightId) => {
+    setSceneLights((prev) => prev.filter((l) => l.id !== lightId));
+  }, []);
+
   const handleLoadCameras = useCallback((cameraDataList) => {
     const newCameras = cameraDataList.map((camData, i) => ({
       id: uuidv4(),
@@ -474,6 +499,10 @@ export default function App() {
             onClearAllCameras={handleClearAllCameras}
             onLoadCameras={handleLoadCameras}
             onRenderSelected={handleRenderSelected}
+            onAddLight={handleAddLight}
+            sceneLights={sceneLights}
+            onUpdateLightIntensity={handleUpdateLightIntensity}
+            onDeleteLight={handleDeleteLight}
             exportCameraData={getCameraExportData}
             hasDetectedObjects={detectedObjects.length > 0}
             sessionVolumes={volumes}
@@ -531,6 +560,7 @@ export default function App() {
           renderHeight={renderHeight}
           renderOverlays={activeTab === "rendering" ? renderOverlays : null}
           fovOverride={activeTab === "rendering" ? fovOverride : null}
+          sceneLights={activeTab === "rendering" ? sceneLights : []}
         />
         {renderSidePanel()}
       </div>

@@ -281,6 +281,7 @@ export default function SceneViewer({
   renderHeight = 1080,
   renderOverlays,
   fovOverride,
+  sceneLights = [],
 }) {
   const [sceneHasLights, setSceneHasLights] = useState(false);
   const sceneObjRef = useRef(null);
@@ -357,6 +358,23 @@ export default function SceneViewer({
         {showOOBBs && detectedObjects && detectedObjects.map((obj, i) => (
           <OOBBOverlay key={`oobb-${i}`} oobb={obj} />
         ))}
+
+        {/* Scene lights visualization */}
+        {sceneLights.map((light) => {
+          const q = new THREE.Quaternion(light.quaternion[0], light.quaternion[1], light.quaternion[2], light.quaternion[3]);
+          return (
+            <group key={light.id} position={light.position} quaternion={q}>
+              <mesh renderOrder={8}>
+                <planeGeometry args={[light.size, light.size]} />
+                <meshBasicMaterial color="#ffff44" transparent opacity={0.3} side={THREE.DoubleSide} depthWrite={false} />
+              </mesh>
+              <lineSegments renderOrder={9}>
+                <edgesGeometry args={[new THREE.PlaneGeometry(light.size, light.size)]} />
+                <lineBasicMaterial color="#ffff44" depthTest={false} />
+              </lineSegments>
+            </group>
+          );
+        })}
 
         {/* Render tab overlays: loaded volumes (AABBs) and objects (OOBBs) */}
         {renderOverlays && renderOverlays.volumes.map((vol, i) => (

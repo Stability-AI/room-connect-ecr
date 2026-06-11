@@ -23,6 +23,10 @@ export default function RenderingPanel({
   onFovChange,
   onLoadCameras,
   onRenderSelected,
+  onAddLight,
+  sceneLights = [],
+  onUpdateLightIntensity,
+  onDeleteLight,
   sessionVolumes = [],
   sessionDetectedObjects = [],
 }) {
@@ -243,6 +247,7 @@ export default function RenderingPanel({
           overrideLighting: overrideLighting,
           lightingBrightness: lightingBrightness,
           includeBlend: includeBlend,
+          lights: sceneLights,
           cameras: cameras.map((c) => ({
             id: c.id,
             name: c.name,
@@ -315,6 +320,7 @@ export default function RenderingPanel({
           overrideLighting: overrideLighting,
           lightingBrightness: lightingBrightness,
           includeBlend: includeBlend,
+          lights: sceneLights,
           cameras: [{
             id: cam.id,
             name: cam.name,
@@ -614,6 +620,47 @@ export default function RenderingPanel({
                   </button>
                 </div>
               </>
+            )}
+          </div>
+
+          {/* Scene Lights */}
+          <div className="panel-section">
+            <label className="panel-label">Scene Lights ({sceneLights.length})</label>
+            <div className="panel-actions">
+              <button className="btn btn-toggle" onClick={onAddLight}>
+                Add Light at View
+              </button>
+            </div>
+            {sceneLights.length > 0 && (
+              <ul className="object-list" style={{ marginTop: 8 }}>
+                {sceneLights.map((light, i) => (
+                  <li key={light.id} className="object-item">
+                    <div style={{ flex: 1 }}>
+                      <span className="object-name">Light {i + 1}</span>
+                      <div className="panel-row" style={{ marginTop: 4 }}>
+                        <input
+                          type="range"
+                          className="cull-slider"
+                          min="10"
+                          max="5000"
+                          step="10"
+                          value={light.intensity}
+                          onChange={(e) => onUpdateLightIntensity(light.id, parseInt(e.target.value))}
+                          style={{ flex: 1 }}
+                        />
+                        <span className="param-value">{light.intensity}</span>
+                      </div>
+                    </div>
+                    <button
+                      className="btn-delete"
+                      onClick={() => onDeleteLight(light.id)}
+                      title="Delete light"
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
 

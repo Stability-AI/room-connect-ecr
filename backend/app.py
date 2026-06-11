@@ -172,6 +172,7 @@ def render_scene():
     lighting_brightness = float(data.get("lightingBrightness", 1.5))
     include_blend = bool(data.get("includeBlend", False))
     camera_list = data.get("cameras", [])
+    lights_list = data.get("lights", [])
 
     logger.info(
         f"Render request: {scene_path.name}, {width}x{height}, {samples} samples, "
@@ -203,6 +204,7 @@ def render_scene():
                     override_lighting=override_lighting,
                     lighting_brightness=lighting_brightness,
                     include_blend=include_blend,
+                    lights=lights_list,
                 )
             else:
                 results = renderer.render_single_view(
