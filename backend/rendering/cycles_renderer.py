@@ -287,31 +287,42 @@ class CyclesRenderer:
         return cam
 
     def _add_user_lights(self, lights):
-        """Add user-placed area lights to the Blender scene."""
+        """Add user-placed directional (sun) lights to the Blender scene."""
         import math
-        from mathutils import Quaternion as MQuaternion, Vector
-
-        yup_to_zup = MQuaternion((math.cos(math.pi / 4), math.sin(math.pi / 4), 0, 0))
+        from mathutils import Vector
 
         for i, light_data in enumerate(lights):
             pos = light_data["position"]
-            q = light_data.get("quaternion", [0, 0, 0, 1])
+            direction = light_data.get("direction", [0, 0, -1])
             intensity = light_data.get("intensity", 500)
-            size = light_data.get("size", 5)
 
-            bpy.ops.object.light_add(type="AREA", location=(pos[0], -pos[2], pos[1]))
+            # Convert position from Y-up to Z-up
+            blender_pos = (pos[0], -pos[2], pos[1])
+
+            bpy.ops.object.light_add(type="SUN", location=blender_pos)
             light = bpy.context.object
             light.name = f"UserLight_{i}"
-            light.data.energy = intensity
-            light.data.size = size
+            light.data.energy = intensity * 0.01  # Sun lights use lower energy scale
 
-            # Convert quaternion from Y-up to Z-up
-            threejs_quat = MQuaternion((q[3], q[0], q[1], q[2]))
-            blender_quat = yup_to_zup @ threejs_quat
-            light.rotation_mode = "QUATERNION"
-            light.rotation_quaternion = blender_quat
+            # Convert direction from Y-up to Z-up and orient the light
+            blender_dir = Vector((direction[0], -direction[2], direction[1]))
+            target = Vector(blender_pos) + blender_dir * 10
 
-        self._capture_log(f"Added {len(lights)} user-placed area lights")
+            # Point the light in the direction
+            direction_vec = (target - Vector(blender_pos)).normalized()
+            up = Vector((0, 0, 1))
+            right = direction_vec.cross(up)
+            if right.length < 0.001:
+                up = Vector((0, 1, 0))
+                right = direction_vec.cross(up)
+            right.normalize()
+            actual_up = right.cross(direction_vec).normalized()
+
+            from mathutils import Matrix
+            rot_matrix = Matrix((right, actual_up, -direction_vec)).transposed().to_4x4()
+            light.rotation_euler = rot_matrix.to_euler()
+
+        self._capture_log(f"Added {len(lights)} user-placed directional lights")
 
     def _ensure_lighting(self, override_lighting: bool = False, brightness: float = 1.5):
         """Add or override lighting in the scene."""

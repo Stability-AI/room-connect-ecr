@@ -319,7 +319,7 @@ export default function SceneViewer({
 
         <SceneLightsDetector scene={sceneObjRef.current} onHasLights={setSceneHasLights} />
 
-        {needsLighting && <StudioLighting brightness={lightingBrightness} />}
+        {needsLighting && <StudioLighting brightness={1.0} />}
 
         <CameraRefExposer onCameraRef={onCameraRef} />
         <FovController fovOverride={fovOverride} />
@@ -359,25 +359,25 @@ export default function SceneViewer({
           <OOBBOverlay key={`oobb-${i}`} oobb={obj} />
         ))}
 
-        {/* Scene lights: visualization + actual light emission */}
+        {/* Scene lights: yellow directional line gizmo (no lighting preview) */}
         {sceneLights.map((light) => {
-          const q = new THREE.Quaternion(light.quaternion[0], light.quaternion[1], light.quaternion[2], light.quaternion[3]);
+          const pos = light.position;
+          const dir = light.direction;
+          const endPoint = [
+            pos[0] + dir[0] * 15,
+            pos[1] + dir[1] * 15,
+            pos[2] + dir[2] * 15,
+          ];
+          const verts = new Float32Array([
+            pos[0], pos[1], pos[2],
+            endPoint[0], endPoint[1], endPoint[2],
+          ]);
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
           return (
-            <group key={light.id} position={light.position} quaternion={q}>
-              <pointLight
-                intensity={light.intensity * 0.01}
-                distance={light.size * 50}
-                color="#ffffff"
-              />
-              <mesh renderOrder={8}>
-                <planeGeometry args={[light.size, light.size]} />
-                <meshBasicMaterial color="#ffff44" transparent opacity={0.3} side={THREE.DoubleSide} depthWrite={false} />
-              </mesh>
-              <lineSegments renderOrder={9}>
-                <edgesGeometry args={[new THREE.PlaneGeometry(light.size, light.size)]} />
-                <lineBasicMaterial color="#ffff44" depthTest={false} />
-              </lineSegments>
-            </group>
+            <lineSegments key={light.id} geometry={geo} renderOrder={9}>
+              <lineBasicMaterial color="#ffff00" depthTest={false} linewidth={2} />
+            </lineSegments>
           );
         })}
 
