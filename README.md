@@ -126,10 +126,15 @@ room-connect/
 
 GLB files larger than ~1.5GB may crash the browser tab due to memory limits. The browser needs to hold the entire file as a blob URL plus Three.js allocates additional memory for geometry/textures. If you see "Failed to fetch" or "Context Lost" errors, reduce the GLB size by:
 - Lowering texture resolution at export
-- Using Draco/KTX2 compression
 - Splitting into multiple smaller files
 
 Tested working range: up to ~1GB GLB files.
+
+### Draco-compressed GLB files fail to render in backend
+
+The Blender BPY Docker image does not include the Draco decompression library (`libextern_draco.so`). GLB files exported with Draco mesh compression will load fine in the Three.js frontend (which has its own Draco decoder) but will fail when sent to the Blender backend for Cycles rendering.
+
+**Workaround**: Re-export GLB files from Blender without Draco compression enabled (uncheck "Draco Mesh Compression" in the glTF export settings).
 
 ### "Render Views" button greyed out / upload fails with 500
 
