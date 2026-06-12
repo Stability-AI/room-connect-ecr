@@ -30,6 +30,7 @@ export default function RenderingPanel({
   onUpdateLightAngle,
   onUpdateLightExposure,
   onDeleteLight,
+  onLoadLights,
   sessionVolumes = [],
   sessionDetectedObjects = [],
 }) {
@@ -712,6 +713,75 @@ export default function RenderingPanel({
                   </li>
                 ))}
               </ul>
+            )}
+            {sceneLights.length > 0 && (
+              <div className="panel-actions" style={{ marginTop: 8 }}>
+                <button className="btn btn-export" onClick={() => {
+                  const blob = new Blob([JSON.stringify({ lights: sceneLights }, null, 2)], { type: "application/json" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "scene_lights.json";
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}>
+                  Save Lights
+                </button>
+                <label className="btn btn-toggle" style={{ textAlign: "center", cursor: "pointer" }}>
+                  Load Lights
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        try {
+                          const data = JSON.parse(ev.target.result);
+                          if (data.lights && onLoadLights) {
+                            onLoadLights(data.lights);
+                          }
+                        } catch (err) {
+                          console.error("Failed to parse lights JSON:", err);
+                        }
+                      };
+                      reader.readAsText(file);
+                      e.target.value = "";
+                    }}
+                    style={{ display: "none" }}
+                  />
+                </label>
+              </div>
+            )}
+            {sceneLights.length === 0 && (
+              <div className="panel-actions" style={{ marginTop: 8 }}>
+                <label className="btn btn-toggle" style={{ textAlign: "center", cursor: "pointer" }}>
+                  Load Lights
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        try {
+                          const data = JSON.parse(ev.target.result);
+                          if (data.lights && onLoadLights) {
+                            onLoadLights(data.lights);
+                          }
+                        } catch (err) {
+                          console.error("Failed to parse lights JSON:", err);
+                        }
+                      };
+                      reader.readAsText(file);
+                      e.target.value = "";
+                    }}
+                    style={{ display: "none" }}
+                  />
+                </label>
+              </div>
             )}
           </div>
 

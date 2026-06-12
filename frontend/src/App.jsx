@@ -344,6 +344,10 @@ export default function App() {
     setSceneLights((prev) => prev.filter((l) => l.id !== lightId));
   }, []);
 
+  const handleLoadLights = useCallback((lightsData) => {
+    setSceneLights(lightsData);
+  }, []);
+
   const handleLoadCameras = useCallback((cameraDataList) => {
     const newCameras = cameraDataList.map((camData, i) => ({
       id: uuidv4(),
@@ -530,6 +534,7 @@ export default function App() {
             onUpdateLightAngle={handleUpdateLightAngle}
             onUpdateLightExposure={handleUpdateLightExposure}
             onDeleteLight={handleDeleteLight}
+            onLoadLights={handleLoadLights}
             exportCameraData={getCameraExportData}
             hasDetectedObjects={detectedObjects.length > 0}
             sessionVolumes={volumes}
