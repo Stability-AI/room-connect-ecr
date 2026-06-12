@@ -320,7 +320,9 @@ class CyclesRenderer:
             track_quat = direction_to_target.to_track_quat('-Z', 'Y')
             light.rotation_euler = track_quat.to_euler()
 
-        self._capture_log(f"Added {len(lights)} user-placed spot lights (energy={intensity * 10})")
+            self._capture_log(f"  Light {i}: pos={list(blender_pos)}, angle={angle}°, energy={intensity * 10}")
+
+        self._capture_log(f"Added {len(lights)} user-placed spot lights")
 
     def _ensure_lighting(self, override_lighting: bool = False, brightness: float = 1.5):
         """Add or override lighting in the scene."""

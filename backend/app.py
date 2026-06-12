@@ -176,7 +176,8 @@ def render_scene():
 
     logger.info(
         f"Render request: {scene_path.name}, {width}x{height}, {samples} samples, "
-        f"depth={generate_depthmap}, override_lighting={override_lighting}"
+        f"depth={generate_depthmap}, override_lighting={override_lighting}, "
+        f"lights={len(lights_list)}, cameras={len(camera_list)}"
     )
 
     log_queue = queue.Queue()
