@@ -287,14 +287,15 @@ class CyclesRenderer:
         return cam
 
     def _add_user_lights(self, lights):
-        """Add user-placed lights (spot or directional/sun) to the Blender scene."""
+        """Add user-placed lights (spot or area) to the Blender scene with power + exposure."""
         import math
         from mathutils import Vector
 
         for i, light_data in enumerate(lights):
             pos = light_data["position"]
             direction = light_data.get("direction", [0, 0, -1])
-            intensity = light_data.get("intensity", 500)
+            intensity = min(light_data.get("intensity", 10000), 1000000)
+            exposure = min(light_data.get("exposure", 0), 10.0)
             light_type = light_data.get("type", "spot")
 
             # Convert position from Y-up to Z-up
@@ -303,22 +304,37 @@ class CyclesRenderer:
             # Convert direction from Y-up to Z-up
             blender_dir = Vector((direction[0], -direction[2], direction[1])).normalized()
 
-            if light_type == "directional":
-                bpy.ops.object.light_add(type="SUN", location=blender_pos)
+            if light_type == "area":
+                size = light_data.get("size", 5)
+                bpy.ops.object.light_add(type="AREA", location=blender_pos)
                 light = bpy.context.object
-                light.name = f"UserSunLight_{i}"
-                light.data.energy = intensity  # SUN uses direct energy (1-50 range typical)
-                self._capture_log(f"  Sun Light {i}: pos={list(blender_pos)}, energy={intensity}")
+                light.name = f"UserAreaLight_{i}"
+                light.data.energy = intensity
+                light.data.size = size
+                light.data.shape = "SQUARE"
+                light.data.spread = math.radians(180)
+                self._capture_log(f"  Area Light {i}: pos={list(blender_pos)}, power={intensity}, exp={exposure}, size={size}")
             else:
+                angle = light_data.get("angle", 120)
                 bpy.ops.object.light_add(type="SPOT", location=blender_pos)
                 light = bpy.context.object
                 light.name = f"UserSpotLight_{i}"
-                angle = light_data.get("angle", 120)
-                light.data.energy = intensity * 1000
+                light.data.energy = intensity
                 light.data.spot_size = math.radians(angle)
                 light.data.spot_blend = 0.5
                 light.data.shadow_soft_size = 2.0
-                self._capture_log(f"  Spot Light {i}: pos={list(blender_pos)}, angle={angle}°, energy={intensity * 1000}")
+                self._capture_log(f"  Spot Light {i}: pos={list(blender_pos)}, power={intensity}, exp={exposure}, angle={angle}°")
+
+            # Set exposure via use_nodes (Cycles light nodes support exposure)
+            if exposure > 0:
+                light.data.use_nodes = True
+                emission_node = light.data.node_tree.nodes.get("Emission")
+                if emission_node:
+                    emission_node.inputs["Strength"].default_value = intensity * (2 ** exposure)
+                    self._capture_log(f"    Effective energy with exposure: {intensity * (2 ** exposure):.0f}")
+
+            # Normalize flag
+            light.data.use_custom_distance = False
 
             # Orient the light to point in the view direction (-Z local axis)
             target = blender_pos + blender_dir * 10

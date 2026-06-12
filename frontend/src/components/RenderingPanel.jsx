@@ -28,6 +28,7 @@ export default function RenderingPanel({
   sceneLights = [],
   onUpdateLightIntensity,
   onUpdateLightAngle,
+  onUpdateLightExposure,
   onDeleteLight,
   sessionVolumes = [],
   sessionDetectedObjects = [],
@@ -646,8 +647,8 @@ export default function RenderingPanel({
               <button className="btn btn-toggle" onClick={() => onAddLight("spot")}>
                 Add Spot Light
               </button>
-              <button className="btn btn-toggle" onClick={() => onAddLight("directional")}>
-                Add Directional Light
+              <button className="btn btn-toggle" onClick={() => onAddLight("area")}>
+                Add Area Light
               </button>
             </div>
             {sceneLights.length > 0 && (
@@ -655,24 +656,38 @@ export default function RenderingPanel({
                 {sceneLights.map((light, i) => (
                   <li key={light.id} className="object-item">
                     <div style={{ flex: 1 }}>
-                      <span className="object-name">{light.type === "directional" ? "Dir" : "Spot"} {i + 1}</span>
+                      <span className="object-name">{light.type === "area" ? "Area" : "Spot"} {i + 1}</span>
                       <div className="panel-row" style={{ marginTop: 4 }}>
-                        <span className="param-value" style={{ minWidth: 20 }}>W</span>
+                        <span className="param-value" style={{ minWidth: 24 }}>Pwr</span>
                         <input
                           type="range"
                           className="cull-slider"
-                          min={light.type === "directional" ? 1 : 10}
-                          max={light.type === "directional" ? 50 : 5000}
-                          step={light.type === "directional" ? 1 : 10}
+                          min="100"
+                          max="1000000"
+                          step="100"
                           value={light.intensity}
                           onChange={(e) => onUpdateLightIntensity(light.id, parseInt(e.target.value))}
                           style={{ flex: 1 }}
                         />
-                        <span className="param-value">{light.intensity}</span>
+                        <span className="param-value">{light.intensity >= 1000 ? `${(light.intensity/1000).toFixed(0)}k` : light.intensity}</span>
                       </div>
-                      {light.type !== "directional" && (
+                      <div className="panel-row" style={{ marginTop: 2 }}>
+                        <span className="param-value" style={{ minWidth: 24 }}>Exp</span>
+                        <input
+                          type="range"
+                          className="cull-slider"
+                          min="0"
+                          max="10"
+                          step="0.1"
+                          value={light.exposure || 0}
+                          onChange={(e) => onUpdateLightExposure(light.id, parseFloat(e.target.value))}
+                          style={{ flex: 1 }}
+                        />
+                        <span className="param-value">{(light.exposure || 0).toFixed(1)}</span>
+                      </div>
+                      {light.type === "spot" && (
                         <div className="panel-row" style={{ marginTop: 2 }}>
-                          <span className="param-value" style={{ minWidth: 20 }}>°</span>
+                          <span className="param-value" style={{ minWidth: 24 }}>Ang</span>
                           <input
                             type="range"
                             className="cull-slider"

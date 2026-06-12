@@ -364,20 +364,32 @@ export default function SceneViewer({
           const pos = new THREE.Vector3(light.position[0], light.position[1], light.position[2]);
           const dir = new THREE.Vector3(light.direction[0], light.direction[1], light.direction[2]).normalize();
           const length = 12;
-          const color = light.type === "directional" ? "#00ccff" : "#ffff00";
+          const color = light.type === "area" ? "#00ccff" : "#ffff00";
 
-          if (light.type === "directional") {
-            // Directional: single line with arrow
+          if (light.type === "area") {
+            // Area: square plane + direction line
+            const q = new THREE.Quaternion(light.quaternion[0], light.quaternion[1], light.quaternion[2], light.quaternion[3]);
             const end = pos.clone().add(dir.clone().multiplyScalar(length));
-            const verts = new Float32Array([
-              pos.x, pos.y, pos.z, end.x, end.y, end.z,
-            ]);
-            const geo = new THREE.BufferGeometry();
-            geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+            const lineVerts = new Float32Array([pos.x, pos.y, pos.z, end.x, end.y, end.z]);
+            const lineGeo = new THREE.BufferGeometry();
+            lineGeo.setAttribute("position", new THREE.BufferAttribute(lineVerts, 3));
+            const size = light.size || 5;
             return (
-              <lineSegments key={light.id} geometry={geo} renderOrder={9}>
-                <lineBasicMaterial color={color} depthTest={false} />
-              </lineSegments>
+              <group key={light.id}>
+                <group position={[pos.x, pos.y, pos.z]} quaternion={q}>
+                  <mesh renderOrder={8}>
+                    <planeGeometry args={[size, size]} />
+                    <meshBasicMaterial color="#00ccff" transparent opacity={0.2} side={THREE.DoubleSide} depthWrite={false} />
+                  </mesh>
+                  <lineSegments renderOrder={9}>
+                    <edgesGeometry args={[new THREE.PlaneGeometry(size, size)]} />
+                    <lineBasicMaterial color="#00ccff" depthTest={false} />
+                  </lineSegments>
+                </group>
+                <lineSegments geometry={lineGeo} renderOrder={9}>
+                  <lineBasicMaterial color="#00ccff" depthTest={false} />
+                </lineSegments>
+              </group>
             );
           }
 
