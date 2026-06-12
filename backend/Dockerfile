@@ -21,6 +21,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Ensure Draco decompression library is accessible for bpy's glTF importer
+RUN DRACO_LIB=$(find /usr/local/lib -name "libextern_draco.so" 2>/dev/null | head -1) && \
+    if [ -n "$DRACO_LIB" ]; then \
+        mkdir -p /app/4.3/python/lib/python3.11/site-packages && \
+        cp "$DRACO_LIB" /app/4.3/python/lib/python3.11/site-packages/libextern_draco.so; \
+    else \
+        BPY_PATH=$(python -c "import bpy, os; print(os.path.dirname(bpy.__file__))") && \
+        DRACO_LIB=$(find "$BPY_PATH" -name "libextern_draco.so" 2>/dev/null | head -1) && \
+        if [ -n "$DRACO_LIB" ]; then \
+            mkdir -p /app/4.3/python/lib/python3.11/site-packages && \
+            cp "$DRACO_LIB" /app/4.3/python/lib/python3.11/site-packages/libextern_draco.so; \
+        fi; \
+    fi
+
 COPY . .
 
 EXPOSE 5000

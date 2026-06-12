@@ -122,6 +122,15 @@ room-connect/
 
 ## Troubleshooting
 
+### GLB file fails to load / WebGL Context Lost
+
+GLB files larger than ~1.5GB may crash the browser tab due to memory limits. The browser needs to hold the entire file as a blob URL plus Three.js allocates additional memory for geometry/textures. If you see "Failed to fetch" or "Context Lost" errors, reduce the GLB size by:
+- Lowering texture resolution at export
+- Using Draco/KTX2 compression
+- Splitting into multiple smaller files
+
+Tested working range: up to ~1GB GLB files.
+
 ### "Render Views" button greyed out / upload fails with 500
 
 Large GLB files (300–700MB) accumulate in the Docker container. If the container disk fills up, uploads fail silently and `sceneFileId` never gets set.
