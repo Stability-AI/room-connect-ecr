@@ -359,18 +359,33 @@ export default function SceneViewer({
           <OOBBOverlay key={`oobb-${i}`} oobb={obj} />
         ))}
 
-        {/* Scene lights: yellow cone gizmo showing direction + angle */}
+        {/* Scene lights gizmos: cone for spot, line for directional */}
         {sceneLights.map((light) => {
           const pos = new THREE.Vector3(light.position[0], light.position[1], light.position[2]);
           const dir = new THREE.Vector3(light.direction[0], light.direction[1], light.direction[2]).normalize();
           const length = 12;
+          const color = light.type === "directional" ? "#00ccff" : "#ffff00";
+
+          if (light.type === "directional") {
+            // Directional: single line with arrow
+            const end = pos.clone().add(dir.clone().multiplyScalar(length));
+            const verts = new Float32Array([
+              pos.x, pos.y, pos.z, end.x, end.y, end.z,
+            ]);
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+            return (
+              <lineSegments key={light.id} geometry={geo} renderOrder={9}>
+                <lineBasicMaterial color={color} depthTest={false} />
+              </lineSegments>
+            );
+          }
+
+          // Spot: cone shape
           const halfAngle = ((light.angle || 120) / 2) * (Math.PI / 180);
           const radius = Math.tan(halfAngle) * length;
-
-          // Cone center line endpoint
           const end = pos.clone().add(dir.clone().multiplyScalar(length));
 
-          // Compute perpendicular vectors for cone edges
           const up = new THREE.Vector3(0, 1, 0);
           let right = new THREE.Vector3().crossVectors(dir, up).normalize();
           if (right.length() < 0.01) right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(1, 0, 0)).normalize();
@@ -394,7 +409,7 @@ export default function SceneViewer({
           geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
           return (
             <lineSegments key={light.id} geometry={geo} renderOrder={9}>
-              <lineBasicMaterial color="#ffff00" depthTest={false} />
+              <lineBasicMaterial color={color} depthTest={false} />
             </lineSegments>
           );
         })}

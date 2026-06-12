@@ -643,8 +643,11 @@ export default function RenderingPanel({
           <div className="panel-section">
             <label className="panel-label">Scene Lights ({sceneLights.length})</label>
             <div className="panel-actions">
-              <button className="btn btn-toggle" onClick={onAddLight}>
-                Add Light at View
+              <button className="btn btn-toggle" onClick={() => onAddLight("spot")}>
+                Add Spot Light
+              </button>
+              <button className="btn btn-toggle" onClick={() => onAddLight("directional")}>
+                Add Directional Light
               </button>
             </div>
             {sceneLights.length > 0 && (
@@ -652,35 +655,37 @@ export default function RenderingPanel({
                 {sceneLights.map((light, i) => (
                   <li key={light.id} className="object-item">
                     <div style={{ flex: 1 }}>
-                      <span className="object-name">Light {i + 1}</span>
+                      <span className="object-name">{light.type === "directional" ? "Dir" : "Spot"} {i + 1}</span>
                       <div className="panel-row" style={{ marginTop: 4 }}>
                         <span className="param-value" style={{ minWidth: 20 }}>W</span>
                         <input
                           type="range"
                           className="cull-slider"
-                          min="10"
-                          max="5000"
-                          step="10"
+                          min={light.type === "directional" ? 1 : 10}
+                          max={light.type === "directional" ? 50 : 5000}
+                          step={light.type === "directional" ? 1 : 10}
                           value={light.intensity}
                           onChange={(e) => onUpdateLightIntensity(light.id, parseInt(e.target.value))}
                           style={{ flex: 1 }}
                         />
                         <span className="param-value">{light.intensity}</span>
                       </div>
-                      <div className="panel-row" style={{ marginTop: 2 }}>
-                        <span className="param-value" style={{ minWidth: 20 }}>°</span>
-                        <input
-                          type="range"
-                          className="cull-slider"
-                          min="10"
-                          max="170"
-                          step="5"
-                          value={light.angle || 120}
-                          onChange={(e) => onUpdateLightAngle(light.id, parseInt(e.target.value))}
-                          style={{ flex: 1 }}
-                        />
-                        <span className="param-value">{light.angle || 120}°</span>
-                      </div>
+                      {light.type !== "directional" && (
+                        <div className="panel-row" style={{ marginTop: 2 }}>
+                          <span className="param-value" style={{ minWidth: 20 }}>°</span>
+                          <input
+                            type="range"
+                            className="cull-slider"
+                            min="10"
+                            max="170"
+                            step="5"
+                            value={light.angle || 120}
+                            onChange={(e) => onUpdateLightAngle(light.id, parseInt(e.target.value))}
+                            style={{ flex: 1 }}
+                          />
+                          <span className="param-value">{light.angle || 120}°</span>
+                        </div>
+                      )}
                     </div>
                     <button
                       className="btn-delete"

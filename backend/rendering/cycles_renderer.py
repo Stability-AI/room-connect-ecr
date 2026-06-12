@@ -287,44 +287,46 @@ class CyclesRenderer:
         return cam
 
     def _add_user_lights(self, lights):
-        """Add user-placed spot lights to the Blender scene (illuminates interior in view direction)."""
+        """Add user-placed lights (spot or directional/sun) to the Blender scene."""
         import math
-        from mathutils import Vector, Matrix
+        from mathutils import Vector
 
         for i, light_data in enumerate(lights):
             pos = light_data["position"]
             direction = light_data.get("direction", [0, 0, -1])
             intensity = light_data.get("intensity", 500)
+            light_type = light_data.get("type", "spot")
 
             # Convert position from Y-up to Z-up
             blender_pos = Vector((pos[0], -pos[2], pos[1]))
 
-            bpy.ops.object.light_add(type="SPOT", location=blender_pos)
-            light = bpy.context.object
-            light.name = f"UserLight_{i}"
-            angle = light_data.get("angle", 120)
-            # Scale energy based on scene size — interior scenes need very high energy
-            # because the light is typically far from surfaces
-            light.data.energy = intensity * 1000
-            light.data.spot_size = math.radians(angle)
-            light.data.spot_blend = 0.5  # Soft edges
-            light.data.shadow_soft_size = 2.0
-
             # Convert direction from Y-up to Z-up
             blender_dir = Vector((direction[0], -direction[2], direction[1])).normalized()
 
-            # Orient the spot light to point in the view direction
-            # Blender spot lights point along -Z in local space
+            if light_type == "directional":
+                bpy.ops.object.light_add(type="SUN", location=blender_pos)
+                light = bpy.context.object
+                light.name = f"UserSunLight_{i}"
+                light.data.energy = intensity  # SUN uses direct energy (1-50 range typical)
+                self._capture_log(f"  Sun Light {i}: pos={list(blender_pos)}, energy={intensity}")
+            else:
+                bpy.ops.object.light_add(type="SPOT", location=blender_pos)
+                light = bpy.context.object
+                light.name = f"UserSpotLight_{i}"
+                angle = light_data.get("angle", 120)
+                light.data.energy = intensity * 1000
+                light.data.spot_size = math.radians(angle)
+                light.data.spot_blend = 0.5
+                light.data.shadow_soft_size = 2.0
+                self._capture_log(f"  Spot Light {i}: pos={list(blender_pos)}, angle={angle}°, energy={intensity * 1000}")
+
+            # Orient the light to point in the view direction (-Z local axis)
             target = blender_pos + blender_dir * 10
             direction_to_target = (target - blender_pos).normalized()
-
-            # Create rotation to point -Z toward target
             track_quat = direction_to_target.to_track_quat('-Z', 'Y')
             light.rotation_euler = track_quat.to_euler()
 
-            self._capture_log(f"  Light {i}: pos={list(blender_pos)}, angle={angle}°, energy={intensity * 1000}")
-
-        self._capture_log(f"Added {len(lights)} user-placed spot lights")
+        self._capture_log(f"Added {len(lights)} user-placed lights")
 
     def _ensure_lighting(self, override_lighting: bool = False, brightness: float = 1.5):
         """Add or override lighting in the scene."""

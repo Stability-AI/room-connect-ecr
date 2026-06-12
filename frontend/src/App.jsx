@@ -311,16 +311,17 @@ export default function App() {
     setActiveCameraView(null);
   }, []);
 
-  const handleAddLight = useCallback(() => {
+  const handleAddLight = useCallback((lightType = "spot") => {
     if (!viewCameraRef.current) return;
     const cam = viewCameraRef.current;
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
     setSceneLights((prev) => [...prev, {
       id: uuidv4(),
+      type: lightType,
       position: [cam.position.x, cam.position.y, cam.position.z],
       direction: [forward.x, forward.y, forward.z],
       quaternion: [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w],
-      intensity: 500,
+      intensity: lightType === "spot" ? 500 : 5,
       angle: 120,
     }]);
   }, []);
