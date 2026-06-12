@@ -303,7 +303,9 @@ class CyclesRenderer:
             light = bpy.context.object
             light.name = f"UserLight_{i}"
             angle = light_data.get("angle", 120)
-            light.data.energy = intensity * 10  # Spot lights need high energy for interiors
+            # Scale energy based on scene size — interior scenes need very high energy
+            # because the light is typically far from surfaces
+            light.data.energy = intensity * 1000
             light.data.spot_size = math.radians(angle)
             light.data.spot_blend = 0.5  # Soft edges
             light.data.shadow_soft_size = 2.0
@@ -320,7 +322,7 @@ class CyclesRenderer:
             track_quat = direction_to_target.to_track_quat('-Z', 'Y')
             light.rotation_euler = track_quat.to_euler()
 
-            self._capture_log(f"  Light {i}: pos={list(blender_pos)}, angle={angle}°, energy={intensity * 10}")
+            self._capture_log(f"  Light {i}: pos={list(blender_pos)}, angle={angle}°, energy={intensity * 1000}")
 
         self._capture_log(f"Added {len(lights)} user-placed spot lights")
 
