@@ -678,13 +678,13 @@ export default function RenderingPanel({
                           type="range"
                           className="cull-slider"
                           min="0"
-                          max="10"
-                          step="0.1"
+                          max="1"
+                          step="0.01"
                           value={light.exposure || 0}
                           onChange={(e) => onUpdateLightExposure(light.id, parseFloat(e.target.value))}
                           style={{ flex: 1 }}
                         />
-                        <span className="param-value">{(light.exposure || 0).toFixed(1)}</span>
+                        <span className="param-value">{(light.exposure || 0).toFixed(2)}</span>
                       </div>
                       {light.type === "spot" && (
                         <div className="panel-row" style={{ marginTop: 2 }}>
