@@ -322,9 +322,10 @@ export default function App() {
       direction: [forward.x, forward.y, forward.z],
       quaternion: [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w],
       intensity: 10000,
-      exposure: 5.0,
+      exposure: 0,
       angle: lightType === "spot" ? 120 : 180,
-      size: 5,
+      sizeX: 1.0,
+      sizeY: 1.0,
     }]);
   }, []);
 
@@ -338,6 +339,10 @@ export default function App() {
 
   const handleUpdateLightExposure = useCallback((lightId, exposure) => {
     setSceneLights((prev) => prev.map((l) => l.id === lightId ? { ...l, exposure } : l));
+  }, []);
+
+  const handleUpdateLightSize = useCallback((lightId, axis, value) => {
+    setSceneLights((prev) => prev.map((l) => l.id === lightId ? { ...l, [axis]: value } : l));
   }, []);
 
   const handleDeleteLight = useCallback((lightId) => {
@@ -533,6 +538,7 @@ export default function App() {
             onUpdateLightIntensity={handleUpdateLightIntensity}
             onUpdateLightAngle={handleUpdateLightAngle}
             onUpdateLightExposure={handleUpdateLightExposure}
+            onUpdateLightSize={handleUpdateLightSize}
             onDeleteLight={handleDeleteLight}
             onLoadLights={handleLoadLights}
             exportCameraData={getCameraExportData}

@@ -29,6 +29,7 @@ export default function RenderingPanel({
   onUpdateLightIntensity,
   onUpdateLightAngle,
   onUpdateLightExposure,
+  onUpdateLightSize,
   onDeleteLight,
   onLoadLights,
   sessionVolumes = [],
@@ -701,6 +702,38 @@ export default function RenderingPanel({
                           />
                           <span className="param-value">{light.angle || 120}°</span>
                         </div>
+                      )}
+                      {light.type === "area" && (
+                        <>
+                          <div className="panel-row" style={{ marginTop: 2 }}>
+                            <span className="param-value" style={{ minWidth: 24 }}>X</span>
+                            <input
+                              type="range"
+                              className="cull-slider"
+                              min="0.1"
+                              max="10"
+                              step="0.1"
+                              value={light.sizeX || 1.0}
+                              onChange={(e) => onUpdateLightSize(light.id, "sizeX", parseFloat(e.target.value))}
+                              style={{ flex: 1 }}
+                            />
+                            <span className="param-value">{(light.sizeX || 1.0).toFixed(1)}</span>
+                          </div>
+                          <div className="panel-row" style={{ marginTop: 2 }}>
+                            <span className="param-value" style={{ minWidth: 24 }}>Y</span>
+                            <input
+                              type="range"
+                              className="cull-slider"
+                              min="0.1"
+                              max="10"
+                              step="0.1"
+                              value={light.sizeY || 1.0}
+                              onChange={(e) => onUpdateLightSize(light.id, "sizeY", parseFloat(e.target.value))}
+                              style={{ flex: 1 }}
+                            />
+                            <span className="param-value">{(light.sizeY || 1.0).toFixed(1)}</span>
+                          </div>
+                        </>
                       )}
                     </div>
                     <button

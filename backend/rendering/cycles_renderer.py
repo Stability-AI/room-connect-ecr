@@ -295,7 +295,7 @@ class CyclesRenderer:
             pos = light_data["position"]
             direction = light_data.get("direction", [0, 0, -1])
             intensity = min(light_data.get("intensity", 10000), 1000000)
-            exposure = min(light_data.get("exposure", 0), 10.0)
+            exposure = min(light_data.get("exposure", 0), 1.0)
             light_type = light_data.get("type", "spot")
 
             # Convert position from Y-up to Z-up
@@ -305,15 +305,17 @@ class CyclesRenderer:
             blender_dir = Vector((direction[0], -direction[2], direction[1])).normalized()
 
             if light_type == "area":
-                size = light_data.get("size", 5)
+                size_x = light_data.get("sizeX", 1.0)
+                size_y = light_data.get("sizeY", 1.0)
                 bpy.ops.object.light_add(type="AREA", location=blender_pos)
                 light = bpy.context.object
                 light.name = f"UserAreaLight_{i}"
                 light.data.energy = intensity
-                light.data.size = size
-                light.data.shape = "SQUARE"
+                light.data.shape = "RECTANGLE"
+                light.data.size = size_x
+                light.data.size_y = size_y
                 light.data.spread = math.radians(180)
-                self._capture_log(f"  Area Light {i}: pos={list(blender_pos)}, power={intensity}, exp={exposure}, size={size}")
+                self._capture_log(f"  Area Light {i}: pos={list(blender_pos)}, power={intensity}, exp={exposure}, size={size_x}x{size_y}")
             else:
                 angle = light_data.get("angle", 120)
                 bpy.ops.object.light_add(type="SPOT", location=blender_pos)

@@ -373,16 +373,17 @@ export default function SceneViewer({
             const lineVerts = new Float32Array([pos.x, pos.y, pos.z, end.x, end.y, end.z]);
             const lineGeo = new THREE.BufferGeometry();
             lineGeo.setAttribute("position", new THREE.BufferAttribute(lineVerts, 3));
-            const size = light.size || 5;
+            const sizeX = light.sizeX || 1.0;
+            const sizeY = light.sizeY || 1.0;
             return (
               <group key={light.id}>
                 <group position={[pos.x, pos.y, pos.z]} quaternion={q}>
                   <mesh renderOrder={8}>
-                    <planeGeometry args={[size, size]} />
+                    <planeGeometry args={[sizeX, sizeY]} />
                     <meshBasicMaterial color="#00ccff" transparent opacity={0.2} side={THREE.DoubleSide} depthWrite={false} />
                   </mesh>
                   <lineSegments renderOrder={9}>
-                    <edgesGeometry args={[new THREE.PlaneGeometry(size, size)]} />
+                    <edgesGeometry args={[new THREE.PlaneGeometry(sizeX, sizeY)]} />
                     <lineBasicMaterial color="#00ccff" depthTest={false} />
                   </lineSegments>
                 </group>
