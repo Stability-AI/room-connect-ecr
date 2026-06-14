@@ -53,5 +53,27 @@ The exposure slider for lights should have a value range of 0 to 1 (not 0 to 10 
 - Default value for new lights: currently 5.0 — should be 0.0
 
 ### Fixes Needed
-- Backend cap: change from `min(..., 10.0)` to `min(..., 1.0)`
-- Default exposure for new lights in App.jsx: change from `exposure: 5.0` to `exposure: 0`
+- Backend cap: change from `min(..., 10.0)` to `min(..., 1.0)` (DONE)
+- Default exposure for new lights in App.jsx: change from `exposure: 5.0` to `exposure: 0` (DONE)
+
+---
+
+## 3. Selectable + Highlighted Lights in 3D View
+
+### Description
+Each light in the scene should be selectable by clicking on it in the list or in the 3D viewport. The selected light's gizmo should be highlighted with a distinct color.
+
+### Behaviour
+- Click a light in the Scene Lights list → highlights that light's gizmo in the 3D view
+- Click the light gizmo in the 3D view → selects it in the list
+- Selected light gizmo: bright white/cyan outline or brighter color to distinguish from unselected
+- Unselected lights: dimmer/default color (current yellow/blue)
+- Only one light can be selected at a time
+- Selecting a light could also scroll the list to show its controls
+
+### Implementation
+- Add `selectedLightId` state in App.jsx
+- Pass to SceneViewer for gizmo highlighting (change color/opacity when selected)
+- Pass to RenderingPanel for list highlighting (`.selected` class on the list item)
+- Add `onClick` handler on light gizmos in SceneViewer (use raycaster or R3F `onClick` on the mesh)
+- Add `onClick` handler on light list items in RenderingPanel
