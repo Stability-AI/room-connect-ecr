@@ -1,0 +1,105 @@
+name: on-merge
+
+on:
+  push:
+    branches: [main]
+
+env:
+  REPO_NAME: 'room-connect-ecr'
+  ECR_REPO_NAME: 'stability/room-connect-ecr'
+  AWS_REGION: 'us-west-2'
+  AWS_ACCOUNT: '009160059619'
+  GHA_APPLIER_ROLE: 'arn:aws:iam::009160059619:role/GitHubOIDCRole'
+
+jobs:
+
+  release:
+    runs-on:
+      - self-hosted
+      - linux
+      - codebuild
+      - small
+      - us-west-2
+    permissions:
+      id-token: write
+      contents: write
+    outputs:
+      version: ${{ steps.release_outputs.outputs.version }}
+      tag: ${{ steps.release_outputs.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Semantic Version Release
+        id: semver_release
+        uses: python-semantic-release/python-semantic-release@v9.21.0
+        with:
+          changelog: false
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          git_committer_name: "github-actions"
+          git_committer_email: "actions@users.noreply.github.com"
+
+      - name: Force Patch Release if no release
+        if: steps.semver_release.outputs.released == 'false'
+        id: patch_release
+        uses: python-semantic-release/python-semantic-release@v9.21.0
+        with:
+          changelog: false
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          git_committer_name: "github-actions"
+          git_committer_email: "actions@users.noreply.github.com"
+          force: patch
+
+      - name: Resolve release outputs
+        id: release_outputs
+        run: |
+          if [ "${{ steps.semver_release.outputs.released }}" = "true" ]; then
+            echo "version=${{ steps.semver_release.outputs.version }}" >> $GITHUB_OUTPUT
+            echo "tag=${{ steps.semver_release.outputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${{ steps.patch_release.outputs.version }}" >> $GITHUB_OUTPUT
+            echo "tag=${{ steps.patch_release.outputs.tag }}" >> $GITHUB_OUTPUT
+          fi
+
+  docker-build-push:
+    needs: release
+    name: Build and Push Docker Image
+    runs-on:
+      - self-hosted
+      - linux
+      - codebuild
+      - small
+      - us-west-2
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup AWS and ECR
+        id: setup-ecr
+        uses: ./.github/actions/setup-aws-ecr
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build, tag, and push Docker image to ECR
+        env:
+          REGISTRY: ${{ steps.setup-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ needs.release.outputs.version }}
+        run: |
+          docker buildx build \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --tag $REGISTRY/${{ env.ECR_REPO_NAME }}:$IMAGE_TAG \
+            --tag $REGISTRY/${{ env.ECR_REPO_NAME }}:latest \
+            --load \
+            -f Dockerfile .
+          docker push $REGISTRY/${{ env.ECR_REPO_NAME }}:$IMAGE_TAG
+          docker push $REGISTRY/${{ env.ECR_REPO_NAME }}:latest

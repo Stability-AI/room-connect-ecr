@@ -38,3 +38,24 @@ coverage.xml
 
 # Docker
 *.pid
+
+# Python packaging
+*.egg-info/
+*.egg
+*.so
+*.manifest
+*.spec
+MANIFEST
+
+# pytest
+.pytest_cache/
+.hypothesis/
+
+# mypy / type checkers
+.mypy_cache/
+.dmypy.json
+.pytype/
+
+# Misc
+.cache
+.prof

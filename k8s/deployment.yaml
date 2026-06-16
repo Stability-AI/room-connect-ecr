@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: room-connect-ecr
+  labels:
+    app: room-connect-ecr
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: room-connect-ecr
+  template:
+    metadata:
+      labels:
+        app: room-connect-ecr
+    spec:
+      containers:
+        - name: room-connect-ecr
+          image: 009160059619.dkr.ecr.us-west-2.amazonaws.com/stability/room-connect-ecr:latest
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          env:
+            - name: UPLOAD_DIR
+              value: /data/uploads
+            - name: STATIC_DIR
+              value: ./static
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: uploads
+              mountPath: /data/uploads
+      volumes:
+        - name: uploads
+          emptyDir: {}

@@ -1,0 +1,119 @@
+name: on-pr
+
+on:
+  pull_request:
+
+env:
+  REPO_NAME: 'room-connect-ecr'
+  ECR_REPO_NAME: 'stability/room-connect-ecr'
+  AWS_REGION: 'us-west-2'
+  AWS_ACCOUNT: '009160059619'
+  GHA_APPLIER_ROLE: 'arn:aws:iam::009160059619:role/GitHubOIDCRole'
+
+jobs:
+
+  pre-commit:
+    name: Run Pre-Commit Hooks
+    runs-on:
+      - self-hosted
+      - linux
+      - codebuild
+      - small
+      - us-west-2
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-
+
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      - name: Run Pre-Commit Hooks
+        run: pre-commit run --all-files
+
+  docker-build-and-push:
+    name: Build and Push Docker Image
+    needs: pre-commit
+    runs-on:
+      - self-hosted
+      - linux
+      - codebuild
+      - small
+      - us-west-2
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    outputs:
+      ecr_image: ${{ steps.build_push.outputs.ecr_image }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup AWS and ECR
+        id: setup-ecr
+        uses: ./.github/actions/setup-aws-ecr
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate image tag
+        id: tag
+        run: |
+          SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-7)
+          IMAGE_TAG="pr-${{ github.event.pull_request.number }}-${SHORT_SHA}"
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Build, tag, and push Docker image to ECR
+        id: build_push
+        env:
+          REGISTRY: ${{ steps.setup-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+        run: |
+          docker buildx build \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --tag $REGISTRY/${{ env.ECR_REPO_NAME }}:$IMAGE_TAG \
+            --load \
+            -f Dockerfile .
+          docker push $REGISTRY/${{ env.ECR_REPO_NAME }}:$IMAGE_TAG
+          echo "ecr_image=$REGISTRY/${{ env.ECR_REPO_NAME }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+  comment-on-pr:
+    needs: docker-build-and-push
+    name: Comment on PR
+    runs-on:
+      - self-hosted
+      - linux
+      - codebuild
+      - small
+      - us-west-2
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment on PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          hide_and_recreate: true
+          hide_classify: "OUTDATED"
+          message: |
+            **Dev image pushed to ECR**
+
+            **Commit**: `${{ github.event.pull_request.head.sha }}`
+            **Image**: `${{ needs.docker-build-and-push.outputs.ecr_image }}`
+
+            Pull with:
+            ```
+            aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 009160059619.dkr.ecr.us-west-2.amazonaws.com
+            docker pull ${{ needs.docker-build-and-push.outputs.ecr_image }}
+            ```
