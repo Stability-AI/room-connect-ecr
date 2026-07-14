@@ -14,12 +14,7 @@ env:
 jobs:
 
   release:
-    runs-on:
-      - self-hosted
-      - linux
-      - codebuild
-      - small
-      - us-west-2
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: write
@@ -68,12 +63,7 @@ jobs:
   docker-build-push:
     needs: release
     name: Build and Push Docker Image
-    runs-on:
-      - self-hosted
-      - linux
-      - codebuild
-      - small
-      - us-west-2
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
