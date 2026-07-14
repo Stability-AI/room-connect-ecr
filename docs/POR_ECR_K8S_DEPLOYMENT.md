@@ -32,7 +32,7 @@ This maps to **Pattern A (Kustomize + ALB)** from the company deployment guide, 
 | ECR image | `009160059619.dkr.ecr.us-west-2.amazonaws.com/stability/room-connect-ecr` |
 | IRSA role | `data1-us-west-2-room-connect-irsa` |
 | DNS | `room-connect.data.stability.ai` |
-| GPU pool | `data-gpu-g6g7` (Karpenter, G5/G6/G7 families) |
+| Karpenter pool | `data-cpu-realtime` (on-demand c6i/c7i/m6i/m7i; GPU `data-gpu-g6g7` available for future upgrade) |
 
 ## Prerequisites
 
@@ -261,14 +261,11 @@ resources:
   - ingress.yaml
 ```
 
-### 2.4 Deployment (GPU-enabled)
+### 2.4 Deployment (CPU -- initially; GPU can be re-enabled later)
 
-Key differences from a standard CPU deployment:
-- `nodeSelector` targets the `data-gpu-g6g7` Karpenter pool
-- Two tolerations: `team/data` (required for all data workloads) + `nvidia.com/gpu` (GPU pool taint)
-- `nvidia.com/gpu: "1"` resource request
-- Higher memory limits for Blender + large GLB scenes
-- Single replica (each pod claims a full GPU; GPU instances are expensive)
+The initial deployment runs on CPU. Blender Cycles automatically falls back to CPU rendering when no GPU is detected. GPU scheduling was attempted first but caused 5-10 minute cold starts and scheduling failures due to Karpenter GPU node provisioning delays. CPU rendering is slower but sufficient for the proof-of-concept phase.
+
+To re-enable GPU later, change `nodeSelector` to `lane: gpu-g6g7` / `workload: inference`, add the `nvidia.com/gpu` toleration and resource request. See the git history of `kubernetes-data` for the original GPU manifest.
 
 ```yaml
 # apps/room-connect/deployment.yaml
@@ -288,14 +285,11 @@ spec:
     spec:
       serviceAccountName: room-connect
       nodeSelector:
-        lane: gpu-g6g7
-        workload: inference
+        lane: cpu-realtime
+        workload: realtime
         owner: data
       tolerations:
         - key: team/data
-          operator: Exists
-          effect: NoSchedule
-        - key: nvidia.com/gpu
           operator: Exists
           effect: NoSchedule
       containers:
@@ -312,11 +306,9 @@ spec:
             requests:
               memory: "2Gi"
               cpu: "1000m"
-              nvidia.com/gpu: "1"
             limits:
               memory: "8Gi"
               cpu: "4000m"
-              nvidia.com/gpu: "1"
           readinessProbe:
             httpGet:
               path: /api/health
