@@ -55,6 +55,7 @@ function SceneModel({ url, shadingMode, onSceneReady }) {
   const { scene } = useGLTF(url);
   const originalMaterials = useRef(new Map());
   const hasStoredOriginals = useRef(false);
+  const prevUrlRef = useRef(url);
 
   useEffect(() => {
     if (!hasStoredOriginals.current) {
@@ -66,6 +67,29 @@ function SceneModel({ url, shadingMode, onSceneReady }) {
       hasStoredOriginals.current = true;
     }
   }, [scene]);
+
+  useEffect(() => {
+    const currentUrl = prevUrlRef.current;
+    return () => {
+      scene.traverse((child) => {
+        if (child.isMesh) {
+          child.geometry?.dispose();
+          if (child.material) {
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach((m) => {
+              Object.values(m).forEach((val) => {
+                if (val && typeof val.dispose === "function") val.dispose();
+              });
+              m.dispose();
+            });
+          }
+        }
+      });
+      originalMaterials.current.clear();
+      hasStoredOriginals.current = false;
+      useGLTF.clear(currentUrl);
+    };
+  }, [url, scene]);
 
   useEffect(() => {
     scene.traverse((child) => {
@@ -282,6 +306,8 @@ export default function SceneViewer({
   renderOverlays,
   fovOverride,
   sceneLights = [],
+  selectedLightId,
+  onSelectLight,
 }) {
   const [sceneHasLights, setSceneHasLights] = useState(false);
   const sceneObjRef = useRef(null);
@@ -359,15 +385,18 @@ export default function SceneViewer({
           <OOBBOverlay key={`oobb-${i}`} oobb={obj} />
         ))}
 
-        {/* Scene lights gizmos: cone for spot, line for directional */}
+        {/* Scene lights gizmos: cone for spot, plane for area */}
         {sceneLights.map((light) => {
           const pos = new THREE.Vector3(light.position[0], light.position[1], light.position[2]);
           const dir = new THREE.Vector3(light.direction[0], light.direction[1], light.direction[2]).normalize();
           const length = 12;
-          const color = light.type === "area" ? "#00ccff" : "#ffff00";
+          const isSelected = light.id === selectedLightId;
+          const baseColor = light.type === "area" ? "#00ccff" : "#ffff00";
+          const color = isSelected ? "#ff8800" : baseColor;
+          const opacity = isSelected ? 0.4 : 0.2;
+          const handleClick = (e) => { e.stopPropagation(); onSelectLight && onSelectLight(light.id); };
 
           if (light.type === "area") {
-            // Area: square plane + direction line
             const q = new THREE.Quaternion(light.quaternion[0], light.quaternion[1], light.quaternion[2], light.quaternion[3]);
             const end = pos.clone().add(dir.clone().multiplyScalar(length));
             const lineVerts = new Float32Array([pos.x, pos.y, pos.z, end.x, end.y, end.z]);
@@ -376,19 +405,19 @@ export default function SceneViewer({
             const sizeX = light.sizeX || 1.0;
             const sizeY = light.sizeY || 1.0;
             return (
-              <group key={light.id}>
+              <group key={light.id} onClick={handleClick}>
                 <group position={[pos.x, pos.y, pos.z]} quaternion={q}>
                   <mesh renderOrder={8}>
                     <planeGeometry args={[sizeX, sizeY]} />
-                    <meshBasicMaterial color="#00ccff" transparent opacity={0.2} side={THREE.DoubleSide} depthWrite={false} />
+                    <meshBasicMaterial color={color} transparent opacity={opacity} side={THREE.DoubleSide} depthWrite={false} />
                   </mesh>
                   <lineSegments renderOrder={9}>
                     <edgesGeometry args={[new THREE.PlaneGeometry(sizeX, sizeY)]} />
-                    <lineBasicMaterial color="#00ccff" depthTest={false} />
+                    <lineBasicMaterial color={color} depthTest={false} />
                   </lineSegments>
                 </group>
                 <lineSegments geometry={lineGeo} renderOrder={9}>
-                  <lineBasicMaterial color="#00ccff" depthTest={false} />
+                  <lineBasicMaterial color={color} depthTest={false} />
                 </lineSegments>
               </group>
             );
@@ -421,9 +450,16 @@ export default function SceneViewer({
           const geo = new THREE.BufferGeometry();
           geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
           return (
-            <lineSegments key={light.id} geometry={geo} renderOrder={9}>
-              <lineBasicMaterial color={color} depthTest={false} />
-            </lineSegments>
+            <group key={light.id} onClick={handleClick}>
+              <lineSegments geometry={geo} renderOrder={9}>
+                <lineBasicMaterial color={color} depthTest={false} />
+              </lineSegments>
+              {/* Invisible click target sphere at the light origin */}
+              <mesh position={[pos.x, pos.y, pos.z]} renderOrder={7}>
+                <sphereGeometry args={[2, 8, 8]} />
+                <meshBasicMaterial visible={false} />
+              </mesh>
+            </group>
           );
         })}
 

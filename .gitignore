@@ -3,6 +3,9 @@ node_modules/
 __pycache__/
 *.py[codz]
 
+#POR
+/por
+
 # Build outputs
 frontend/dist/
 build/

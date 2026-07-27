@@ -815,6 +815,30 @@ select.panel-input {
   letter-spacing: 0.03em;
 }
 
+/* Editable slider values */
+.editable-value {
+  cursor: default;
+  border-bottom: 1px dashed transparent;
+  transition: border-color 0.15s;
+}
+
+.editable-value:hover {
+  border-bottom-color: var(--text-secondary);
+}
+
+.editable-value-input {
+  width: 48px;
+  padding: 1px 4px;
+  font-size: inherit;
+  font-family: inherit;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  outline: none;
+  text-align: right;
+}
+
 .upload-status-notice {
   padding: 8px 12px;
   margin-bottom: 8px;

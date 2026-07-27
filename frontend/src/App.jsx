@@ -44,6 +44,7 @@ export default function App() {
 
   // Scene lights state
   const [sceneLights, setSceneLights] = useState([]);
+  const [selectedLightId, setSelectedLightId] = useState(null);
 
   // Camera management state
   const [cameras, setCameras] = useState([]);
@@ -51,19 +52,31 @@ export default function App() {
   const [activeCameraView, setActiveCameraView] = useState(null);
   const viewCameraRef = useRef(null); // ref to get current Three.js camera state
 
-  const handleFileLoad = useCallback((file) => {
+  // Hot-swap state
+  const [hotSwapFile, setHotSwapFile] = useState(null);
+
+  const loadSceneFile = useCallback((file, clearMode = "all") => {
     if (sceneUrl && sceneUrl.startsWith("blob:")) {
       URL.revokeObjectURL(sceneUrl);
     }
     const blobUrl = URL.createObjectURL(file);
     setSceneUrl(blobUrl);
     setSceneFilename(file.name);
-    setVolumes([]);
-    setDetectedObjects([]);
     setSceneFileId(null);
     setUploadProgress(0);
 
-    // Upload to backend in parallel for rendering support
+    if (clearMode === "all") {
+      setVolumes([]);
+      setDetectedObjects([]);
+      setCommittedCount(0);
+    } else if (clearMode === "detection") {
+      setDetectedObjects([]);
+      setCommittedCount(0);
+    }
+    // "keep" mode: preserve everything
+
+    sceneRef.current = null;
+
     uploadSceneChunked(file, (progress) => {
       setUploadProgress(progress);
     })
@@ -76,6 +89,25 @@ export default function App() {
         setUploadProgress(null);
       });
   }, [sceneUrl]);
+
+  const handleFileLoad = useCallback((file) => {
+    if (sceneUrl) {
+      setHotSwapFile(file);
+    } else {
+      loadSceneFile(file, "all");
+    }
+  }, [sceneUrl, loadSceneFile]);
+
+  const handleHotSwapConfirm = useCallback((clearMode) => {
+    if (hotSwapFile) {
+      loadSceneFile(hotSwapFile, clearMode);
+      setHotSwapFile(null);
+    }
+  }, [hotSwapFile, loadSceneFile]);
+
+  const handleHotSwapCancel = useCallback(() => {
+    setHotSwapFile(null);
+  }, []);
 
   const handleSceneReady = useCallback((scene) => {
     sceneRef.current = scene;
@@ -542,6 +574,8 @@ export default function App() {
             onUpdateLightSize={handleUpdateLightSize}
             onDeleteLight={handleDeleteLight}
             onLoadLights={handleLoadLights}
+            selectedLightId={selectedLightId}
+            onSelectLight={setSelectedLightId}
             exportCameraData={getCameraExportData}
             hasDetectedObjects={detectedObjects.length > 0}
             sessionVolumes={volumes}
@@ -609,6 +643,8 @@ export default function App() {
           renderOverlays={activeTab === "rendering" ? renderOverlays : null}
           fovOverride={activeTab === "rendering" ? fovOverride : null}
           sceneLights={activeTab === "rendering" ? sceneLights : []}
+          selectedLightId={selectedLightId}
+          onSelectLight={setSelectedLightId}
         />
         {renderSidePanel()}
       </div>
@@ -627,6 +663,34 @@ export default function App() {
             <div className="dialog-actions">
               <button className="btn btn-primary" onClick={() => setAutoPlaceError(null)}>
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {hotSwapFile && (
+        <div className="dialog-overlay">
+          <div className="dialog">
+            <h2>Update Scene</h2>
+            <p style={{ fontSize: "0.9rem", lineHeight: 1.5 }}>
+              Loading <strong>{hotSwapFile.name}</strong> will replace the current scene.
+              Cameras, lights, and render settings will be preserved.
+            </p>
+            <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              What should happen to volumes and detected objects?
+            </p>
+            <div className="dialog-actions" style={{ gap: "8px", flexWrap: "wrap" }}>
+              <button className="btn btn-primary" onClick={() => handleHotSwapConfirm("keep")}>
+                Keep All
+              </button>
+              <button className="btn btn-accent" onClick={() => handleHotSwapConfirm("detection")}>
+                Clear Detection Data
+              </button>
+              <button className="btn" onClick={() => handleHotSwapConfirm("all")}>
+                Clear Everything
+              </button>
+              <button className="btn" onClick={handleHotSwapCancel}>
+                Cancel
               </button>
             </div>
           </div>

@@ -19,6 +19,17 @@ Open **http://localhost:3000** in your browser.
 1. Click **Load Scene (.glb)** in the toolbar
 2. Select your GLB file (supports files up to 700MB+)
 3. The scene loads in the 3D viewport and simultaneously uploads to the backend for rendering
+4. A **progress bar** appears below the toolbar showing backend upload progress — the Render button activates once upload completes
+
+### Replacing a Scene (Hot-Swap)
+
+If a scene is already loaded and you click **Load Scene** again:
+1. A dialog appears: "Update Scene?"
+2. Choose what to do with existing data:
+   - **Keep All** — preserves volumes, detected objects, cameras, lights, and render settings
+   - **Clear Detection Data** — clears detected objects, keeps volumes/cameras/lights
+   - **Clear Everything** — fresh start (only cameras, lights, and render settings are preserved)
+3. The old scene's 3D data is properly disposed to free memory
 
 ### Navigation Controls
 - **Left-click + drag**: Orbit
@@ -115,18 +126,28 @@ When constraint/entropy options are enabled, the corresponding volumes and OOBBs
 - **Clear All**: Remove all placed cameras
 - Camera frustum shapes reflect the configured render width/height
 
+### Scene Lights
+
+Add custom lights for rendering:
+1. Click **Add Spot Light** or **Add Area Light** — placed at your current view position
+2. Adjust parameters using sliders or **double-click any value to type an exact number**
+3. **Click a light** in the list or in the 3D viewport to select it (highlights orange in 3D, green in list)
+4. Delete individual lights or save/load light configurations as JSON
+
 ### Render Settings
 | Setting | Description |
 |---------|-------------|
 | Width / Height | Output resolution in pixels (frustum shapes update to match) |
 | Samples | Cycles render quality (higher = better, slower) |
 | Override FOV | Custom field of view (20°–120°) with live preview in the viewport |
-| Generate depthmaps | Also render 32-bit EXR depth maps |
+| Generate depthmaps | Also render 32-bit EXR depth maps (fast: 1-sample Cycles) |
 | Override lighting | Replace scene lights with even studio illumination |
 | Brightness slider | Adjust override lighting intensity (0.5x–4.0x) |
 | Include .blend file | Add the Blender scene to the ZIP for inspection |
 | Export camera intrinsics/extrinsics | Download camera parameters as JSON |
 | Show debug console | Display real-time Blender render logs |
+
+> **Tip**: All slider values throughout the app support **double-click to edit** — type an exact number instead of dragging.
 
 ### Rendering
 1. Click **Render Views (N)** where N is the number of placed cameras
@@ -155,7 +176,7 @@ The ZIP contains:
 
 ## Tips
 
-- For large scenes (500MB+), the initial load may take 10–20 seconds. The upload to backend happens in parallel.
+- For large scenes (500MB+), the initial load may take 10–20 seconds. The upload to backend happens in parallel with 4x concurrent chunks — watch the progress bar below the toolbar.
 - Use **Diffuse** mode for fastest navigation on complex scenes.
 - Auto-placed cameras work best after detecting objects (enables entropy-based orientation).
 - The **Relaxed** preset generates more cameras with tighter tolerances; **Dense** minimizes spacing for maximum coverage.

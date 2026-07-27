@@ -495,7 +495,11 @@ class CyclesRenderer:
         )
 
     def configure_depthmap_settings(self):
-        """Configure Cycles for depth map rendering in 32-bit EXR."""
+        """Configure Cycles for depth map rendering in 32-bit EXR.
+
+        Uses 1 sample with no denoising -- depth only needs geometry information,
+        not light transport. Compositor nodes normalize and invert the Z-pass.
+        """
         scene = bpy.context.scene
         scene.render.engine = "CYCLES"
 
@@ -505,18 +509,22 @@ class CyclesRenderer:
         scene.render.resolution_y = self.render_resolution_y
         scene.render.resolution_percentage = 100
 
-        scene.cycles.samples = 32
+        scene.cycles.samples = 1
         scene.cycles.use_denoising = False
 
         scene.render.image_settings.file_format = "OPEN_EXR"
         scene.render.image_settings.color_depth = "32"
         scene.render.image_settings.exr_codec = "ZIP"
 
-        view_layer = scene.view_layers[0]
-        view_layer.use_pass_z = True
+        for vl in scene.view_layers:
+            vl.use_pass_z = True
 
         scene.use_nodes = True
+        scene.render.use_compositing = True
         tree = scene.node_tree
+        if tree is None:
+            scene.use_nodes = True
+            tree = scene.node_tree
         tree.nodes.clear()
         tree.links.clear()
 
@@ -531,7 +539,6 @@ class CyclesRenderer:
 
         composite = tree.nodes.new(type="CompositorNodeComposite")
         composite.location = (700, 0)
-        composite.use_alpha = True
 
         tree.links.new(render_layers.outputs["Depth"], normalize.inputs["Value"])
         tree.links.new(normalize.outputs["Value"], invert.inputs["Color"])
@@ -539,7 +546,7 @@ class CyclesRenderer:
 
         scene.render.threads_mode = "AUTO"
 
-        self._capture_log("Depth map settings configured (32-bit EXR, normalized + inverted)")
+        self._capture_log("Depth map settings configured (1 sample, 32-bit EXR, normalized + inverted)")
 
     def render_single_view(self, generate_depthmap: bool = False, override_lighting: bool = False, lighting_brightness: float = 1.5, include_blend: bool = False) -> dict:
         """

@@ -33,7 +33,7 @@ Room Connect lets you load large 3D interior scenes (GLTF/GLB, tested up to 700M
 | Frontend | React + Three.js (React Three Fiber) |
 | Build | Vite |
 | Backend | Python / Flask / Blender BPY (Cycles) |
-| Deployment | Docker / Docker Compose |
+| Deployment | Docker / Docker Compose / AWS EKS (ArgoCD) |
 
 ## Quick Start
 
@@ -67,8 +67,8 @@ Open **http://localhost:3000**
 - Export detected objects as JSON
 
 ### Rendering Pipeline
-- Blender Cycles via Docker (GPU-accelerated when available)
-- Chunked file upload (10MB chunks, supports 700MB+ GLB files)
+- Blender Cycles via Docker (GPU-accelerated when available, CPU fallback)
+- Parallel chunked file upload (4x concurrency, ~3 min for 700MB) with visible progress bar
 - Manual camera placement ("Place at View")
 - Automatic camera placement (BVH proximity queries, floor detection, inside-mesh validation)
 - Constrain to Volume: limit camera placement to a specific room (load connectivity graph or use session data)
@@ -76,16 +76,29 @@ Open **http://localhost:3000**
 - Session continuity: volumes and objects from earlier tabs available in Rendering without re-export
 - Override FOV (20°–120°) with live viewport preview
 - Override lighting with brightness control
-- 32-bit EXR depth maps
+- 32-bit EXR depth maps (optimized: 1-sample Cycles, ~32x faster than color pass)
 - Real-time render log streaming (SSE)
 - ZIP download with renders + depth maps + .blend file + camera intrinsics/extrinsics
 - Dynamic frustum aspect ratio matching render dimensions
 - Non-convergence dialog with actionable suggestions
 
+### Scene Management
+- Hot-swap GLB: replace the loaded scene without page refresh, preserving cameras, lights, and render settings
+- Confirmation dialog with options: Keep All / Clear Detection Data / Clear Everything
+- Proper Three.js scene disposal (geometries, materials, textures) to prevent memory leaks
+
+### UI
+- Double-click any slider value to type an exact number (EditableValue component)
+- Selectable lights: click in 3D viewport or list to highlight (orange in 3D, green in list)
+- Upload progress bar visible across all tabs during backend upload
+
+### Live Deployment
+
+Room Connect is deployed on the Stability AI data cluster (`data1-us-west-2`) at `room-connect.data.stability.ai`. CI/CD via GitHub Actions pushes Docker images to ECR on merge; ArgoCD syncs the deployment.
+
 ## Documentation
 
 - [User Guide](docs/USER_GUIDE.md) — Step-by-step usage instructions
-- [Post-Mortem](docs/POST_MORTEM.md) — Technical implementation details and lessons learned
 
 ## Project Structure
 

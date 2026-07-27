@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import * as THREE from "three";
+import EditableValue from "./EditableValue";
 
 export default function RenderingPanel({
   hasScene,
@@ -35,6 +36,8 @@ export default function RenderingPanel({
   sessionVolumes = [],
   sessionDetectedObjects = [],
   uploadProgress,
+  selectedLightId,
+  onSelectLight,
 }) {
   const [cameraCount, setCameraCount] = useState(10);
   const [maximizeEntropy, setMaximizeEntropy] = useState(false);
@@ -538,7 +541,7 @@ export default function RenderingPanel({
                     onChange={(e) => setEyeHeightRatio(parseFloat(e.target.value))}
                     className="cull-slider"
                   />
-                  <span className="param-value">{(eyeHeightRatio * 100).toFixed(0)}%</span>
+                  <EditableValue value={eyeHeightRatio} onChange={setEyeHeightRatio} min={0.1} max={0.8} defaultValue={0.3} format={(v) => `${(v * 100).toFixed(0)}%`} />
                 </div>
                 <div className="panel-row">
                   <label className="panel-sublabel">Min wall dist</label>
@@ -548,7 +551,7 @@ export default function RenderingPanel({
                     onChange={(e) => setMinDistanceRatio(parseFloat(e.target.value))}
                     className="cull-slider"
                   />
-                  <span className="param-value">{(minDistanceRatio * 100).toFixed(1)}%</span>
+                  <EditableValue value={minDistanceRatio} onChange={setMinDistanceRatio} min={0.005} max={0.1} defaultValue={0.02} format={(v) => `${(v * 100).toFixed(1)}%`} />
                 </div>
                 <div className="panel-row">
                   <label className="panel-sublabel">Min spacing</label>
@@ -558,7 +561,7 @@ export default function RenderingPanel({
                     onChange={(e) => setMinSpacingRatio(parseFloat(e.target.value))}
                     className="cull-slider"
                   />
-                  <span className="param-value">{(minSpacingRatio * 100).toFixed(1)}%</span>
+                  <EditableValue value={minSpacingRatio} onChange={setMinSpacingRatio} min={0.01} max={0.15} defaultValue={0.05} format={(v) => `${(v * 100).toFixed(1)}%`} />
                 </div>
                 <div className="preset-row">
                   <button className="btn-preset" onClick={() => applyPreset("relaxed")}>Relaxed</button>
@@ -657,7 +660,12 @@ export default function RenderingPanel({
             {sceneLights.length > 0 && (
               <ul className="object-list" style={{ marginTop: 8 }}>
                 {sceneLights.map((light, i) => (
-                  <li key={light.id} className="object-item">
+                  <li
+                    key={light.id}
+                    className={`object-item${selectedLightId === light.id ? " selected" : ""}`}
+                    onClick={() => onSelectLight && onSelectLight(light.id)}
+                    style={{ cursor: "pointer" }}
+                  >
                     <div style={{ flex: 1 }}>
                       <span className="object-name">{light.type === "area" ? "Area" : "Spot"} {i + 1}</span>
                       <div className="panel-row" style={{ marginTop: 4 }}>
@@ -672,7 +680,7 @@ export default function RenderingPanel({
                           onChange={(e) => onUpdateLightIntensity(light.id, parseInt(e.target.value))}
                           style={{ flex: 1 }}
                         />
-                        <span className="param-value">{light.intensity >= 1000 ? `${(light.intensity/1000).toFixed(0)}k` : light.intensity}</span>
+                        <EditableValue value={light.intensity} onChange={(v) => onUpdateLightIntensity(light.id, v)} min={100} max={1000000} defaultValue={10000} format={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
                       </div>
                       <div className="panel-row" style={{ marginTop: 2 }}>
                         <span className="param-value" style={{ minWidth: 24 }}>Exp</span>
@@ -686,7 +694,7 @@ export default function RenderingPanel({
                           onChange={(e) => onUpdateLightExposure(light.id, parseFloat(e.target.value))}
                           style={{ flex: 1 }}
                         />
-                        <span className="param-value">{(light.exposure || 0).toFixed(2)}</span>
+                        <EditableValue value={light.exposure || 0} onChange={(v) => onUpdateLightExposure(light.id, v)} min={0} max={1} defaultValue={0} format={(v) => v.toFixed(2)} />
                       </div>
                       {light.type === "spot" && (
                         <div className="panel-row" style={{ marginTop: 2 }}>
@@ -701,7 +709,7 @@ export default function RenderingPanel({
                             onChange={(e) => onUpdateLightAngle(light.id, parseInt(e.target.value))}
                             style={{ flex: 1 }}
                           />
-                          <span className="param-value">{light.angle || 120}°</span>
+                          <EditableValue value={light.angle || 120} onChange={(v) => onUpdateLightAngle(light.id, v)} min={10} max={170} defaultValue={120} format={(v) => `${v}°`} />
                         </div>
                       )}
                       {light.type === "area" && (
@@ -718,7 +726,7 @@ export default function RenderingPanel({
                               onChange={(e) => onUpdateLightSize(light.id, "sizeX", parseFloat(e.target.value))}
                               style={{ flex: 1 }}
                             />
-                            <span className="param-value">{(light.sizeX || 1.0).toFixed(1)}</span>
+                            <EditableValue value={light.sizeX || 1.0} onChange={(v) => onUpdateLightSize(light.id, "sizeX", v)} min={0.1} max={20} defaultValue={1.0} format={(v) => v.toFixed(1)} />
                           </div>
                           <div className="panel-row" style={{ marginTop: 2 }}>
                             <span className="param-value" style={{ minWidth: 24 }}>Y</span>
@@ -732,7 +740,7 @@ export default function RenderingPanel({
                               onChange={(e) => onUpdateLightSize(light.id, "sizeY", parseFloat(e.target.value))}
                               style={{ flex: 1 }}
                             />
-                            <span className="param-value">{(light.sizeY || 1.0).toFixed(1)}</span>
+                            <EditableValue value={light.sizeY || 1.0} onChange={(v) => onUpdateLightSize(light.id, "sizeY", v)} min={0.1} max={20} defaultValue={1.0} format={(v) => v.toFixed(1)} />
                           </div>
                         </>
                       )}
@@ -870,7 +878,7 @@ export default function RenderingPanel({
                   value={customFov}
                   onChange={(e) => setCustomFov(parseInt(e.target.value))}
                 />
-                <span className="param-value">{customFov}°</span>
+                <EditableValue value={customFov} onChange={(v) => setCustomFov(Math.round(v))} min={20} max={120} defaultValue={60} format={(v) => `${v}°`} />
               </div>
             )}
           </div>
@@ -913,9 +921,7 @@ export default function RenderingPanel({
                     if (onBrightnessChange) onBrightnessChange(val);
                   }}
                 />
-                <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", minWidth: 30 }}>
-                  {lightingBrightness.toFixed(1)}x
-                </span>
+                <EditableValue value={lightingBrightness} onChange={(v) => { setLightingBrightness(v); if (onBrightnessChange) onBrightnessChange(v); }} min={0.5} max={4.0} defaultValue={1.5} format={(v) => `${v.toFixed(1)}x`} style={{ fontSize: "0.75rem", minWidth: 30 }} />
               </div>
             )}
             <label className="checkbox-row">
