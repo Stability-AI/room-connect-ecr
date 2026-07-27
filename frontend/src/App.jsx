@@ -522,6 +522,7 @@ export default function App() {
             hasScene={!!sceneUrl}
             sceneFilename={sceneFilename}
             sceneFileId={sceneFileId}
+            uploadProgress={uploadProgress}
             onBrightnessChange={setLightingBrightness}
             cameras={cameras}
             selectedCameraId={selectedCameraId}
@@ -574,6 +575,14 @@ export default function App() {
         orthographic={orthographic}
         onToggleOrthographic={() => setOrthographic((o) => !o)}
       />
+      {uploadProgress !== null && (
+        <div className="upload-progress-bar">
+          <div className="upload-progress-fill" style={{ width: `${(uploadProgress * 100).toFixed(0)}%` }} />
+          <span className="upload-progress-label">
+            Uploading to backend: {(uploadProgress * 100).toFixed(0)}%
+          </span>
+        </div>
+      )}
       <div className="main-content">
         <SceneViewer
           sceneUrl={sceneUrl}

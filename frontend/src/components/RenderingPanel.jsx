@@ -34,6 +34,7 @@ export default function RenderingPanel({
   onLoadLights,
   sessionVolumes = [],
   sessionDetectedObjects = [],
+  uploadProgress,
 }) {
   const [cameraCount, setCameraCount] = useState(10);
   const [maximizeEntropy, setMaximizeEntropy] = useState(false);
@@ -943,6 +944,16 @@ export default function RenderingPanel({
             </label>
           </div>
 
+          {!sceneFileId && uploadProgress !== null && uploadProgress !== undefined && (
+            <div className="upload-status-notice">
+              Uploading scene to backend ({(uploadProgress * 100).toFixed(0)}%)... Rendering will be available once upload completes.
+            </div>
+          )}
+          {!sceneFileId && (uploadProgress === null || uploadProgress === undefined) && hasScene && (
+            <div className="upload-status-notice upload-error">
+              Backend upload failed. Try reloading the scene.
+            </div>
+          )}
           <div className="panel-actions">
             <button
               className="btn btn-primary"
