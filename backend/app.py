@@ -262,6 +262,119 @@ def render_scene():
     )
 
 
+@app.route("/api/render-splat-dataset", methods=["POST"])
+def render_splat_dataset():
+    """Render a Gaussian Splat training dataset via SSE."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No JSON body provided"}), 400
+
+    scene_id = data.get("sceneId")
+    if not scene_id:
+        return jsonify({"error": "Missing sceneId"}), 400
+
+    scene_path = UPLOAD_DIR / scene_id
+    if not scene_path.exists():
+        matches = list(UPLOAD_DIR.glob(f"*{scene_id}*"))
+        if matches:
+            scene_path = matches[0]
+        else:
+            return jsonify({"error": f"Scene file not found: {scene_id}"}), 404
+
+    camera_list = data.get("cameras", [])
+    if not camera_list:
+        return jsonify({"error": "No cameras provided"}), 400
+
+    preset = data.get("preset", "balanced")
+    resolution = data.get("resolution", [None, None])
+    samples = data.get("samples")
+    generate_depth = bool(data.get("generateDepth", False))
+    override_lighting = bool(data.get("overrideLighting", False))
+    lighting_brightness = float(data.get("lightingBrightness", 1.5))
+    lights_list = data.get("lights", [])
+    hdr_format = data.get("hdrFormat", None)
+    log_transform = bool(data.get("logTransform", False))
+
+    logger.info(
+        f"Splat dataset request: {scene_path.name}, preset={preset}, "
+        f"cameras={len(camera_list)}, depth={generate_depth}, hdr={hdr_format}, log={log_transform}"
+    )
+
+    log_queue = queue.Queue()
+
+    def run_render():
+        try:
+            from rendering.cycles_renderer import CyclesRenderer
+
+            renderer = CyclesRenderer(
+                output_dir=str(RENDER_DIR),
+                log_queue=log_queue,
+            )
+
+            if not renderer.load_scene(str(scene_path)):
+                log_queue.put(("error", json.dumps({"error": "Failed to load scene"})))
+                return
+
+            results = renderer.render_splat_dataset(
+                cameras=camera_list,
+                preset=preset,
+                resolution_x=resolution[0] if resolution[0] else None,
+                resolution_y=resolution[1] if resolution[1] else None,
+                samples=samples,
+                generate_depth=generate_depth,
+                override_lighting=override_lighting,
+                lighting_brightness=lighting_brightness,
+                lights=lights_list,
+                hdr_format=hdr_format,
+                log_transform=log_transform,
+            )
+
+            zip_path = renderer.create_splat_zip(results)
+            zip_filename = Path(zip_path).name
+
+            response = {
+                "success": True,
+                "zip": f"/api/renders/{zip_filename}",
+                "frameCount": len(camera_list),
+                "preset": preset,
+            }
+
+            log_queue.put(("result", json.dumps(response)))
+
+        except Exception as e:
+            logger.exception("Splat dataset render failed")
+            log_queue.put(("error", json.dumps({"error": str(e)})))
+
+    def generate():
+        render_thread = threading.Thread(target=run_render, daemon=True)
+        render_thread.start()
+
+        while True:
+            try:
+                event_type, data = log_queue.get(timeout=1.0)
+            except queue.Empty:
+                if not render_thread.is_alive():
+                    break
+                yield f"event: ping\ndata: alive\n\n"
+                continue
+
+            yield f"event: {event_type}\ndata: {data}\n\n"
+
+            if event_type in ("result", "error"):
+                break
+
+        render_thread.join(timeout=5)
+
+    return Response(
+        stream_with_context(generate()),
+        content_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.route("/api/renders/<filename>")
 def serve_render(filename: str):
     """Serve a rendered image or zip archive."""

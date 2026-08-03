@@ -6,7 +6,7 @@ import { BLENDER_FOV } from "../components/CameraFrustum";
 const DEFAULT_EYE_HEIGHT_RATIO = 0.3; // 30% up from floor to ceiling
 const DEFAULT_MIN_DISTANCE_RATIO = 0.02; // 2% of scene max dimension
 const DEFAULT_MIN_SPACING_RATIO = 0.05; // 5% of scene max dimension
-const MAX_ATTEMPTS = 10000;
+const DEFAULT_MAX_ATTEMPTS = 10000;
 
 /**
  * Merge all mesh geometries in the scene into a single BufferGeometry
@@ -95,6 +95,26 @@ function isInsideMesh(bvh, point) {
  * @param {number} params.count - Number of cameras to generate
  * @returns {THREE.Vector3[]} Array of valid camera positions
  */
+// Height layers for splat mode (3-layer capture for optimal 3DGS reconstruction)
+// Each layer has a base ratio + jitter range to spread cameras within the band
+const SPLAT_HEIGHT_LAYERS = [
+  { base: 0.10, jitter: 0.08, weight: 0.20 },  // low: 2%-18% of interior height
+  { base: 0.40, jitter: 0.10, weight: 0.50 },  // mid: 30%-50% of interior height
+  { base: 0.75, jitter: 0.10, weight: 0.30 },  // high: 65%-85% of interior height
+];
+
+function pickSplatHeightRatio() {
+  const roll = Math.random();
+  let cum = 0;
+  for (const layer of SPLAT_HEIGHT_LAYERS) {
+    cum += layer.weight;
+    if (roll < cum) {
+      return layer.base + (Math.random() - 0.5) * 2 * layer.jitter;
+    }
+  }
+  return 0.40;
+}
+
 export function generateCameraPositions({
   bvh,
   bounds,
@@ -104,19 +124,14 @@ export function generateCameraPositions({
   minDistanceRatio,
   minSpacingRatio,
   volumeConstraint,
+  splatMode = false,
 }) {
   const positions = [];
   let attempts = 0;
+  const maxAttempts = Math.max(DEFAULT_MAX_ATTEMPTS, count * 200);
 
   const sceneSize = new THREE.Vector3();
   bounds.getSize(sceneSize);
-  const maxDim = Math.max(sceneSize.x, sceneSize.y, sceneSize.z);
-
-  // Scale thresholds relative to scene size (use overrides or defaults)
-  const minDistance = maxDim * (minDistanceRatio || DEFAULT_MIN_DISTANCE_RATIO);
-  const minSpacing = maxDim * (minSpacingRatio || DEFAULT_MIN_SPACING_RATIO);
-  const eyeHeight = sceneSize.y * (eyeHeightRatio || DEFAULT_EYE_HEIGHT_RATIO);
-  const camY = floorY + eyeHeight;
 
   // If volume constraint is set, sample within the volume bounds instead of full scene
   let sampleBounds;
@@ -139,83 +154,149 @@ export function generateCameraPositions({
     };
   }
 
-  while (positions.length < count && attempts < MAX_ATTEMPTS) {
+  // Detect actual interior height via ceiling raycast (multiple probes for robustness)
+  const sampleWidth = sampleBounds.maxX - sampleBounds.minX;
+  const sampleDepth = sampleBounds.maxZ - sampleBounds.minZ;
+  let interiorHeight = sceneSize.y;
+
+  const probePoints = [
+    [(sampleBounds.minX + sampleBounds.maxX) / 2, (sampleBounds.minZ + sampleBounds.maxZ) / 2],
+    [sampleBounds.minX + sampleWidth * 0.25, sampleBounds.minZ + sampleDepth * 0.25],
+    [sampleBounds.minX + sampleWidth * 0.75, sampleBounds.minZ + sampleDepth * 0.75],
+  ];
+  const ceilingHeights = [];
+  for (const [px, pz] of probePoints) {
+    const probe = new THREE.Vector3(px, floorY + 1, pz);
+    const hit = bvh.raycastFirst(new THREE.Ray(probe, new THREE.Vector3(0, 1, 0)));
+    if (hit) ceilingHeights.push(hit.point.y - floorY);
+  }
+  if (ceilingHeights.length > 0) {
+    interiorHeight = ceilingHeights.reduce((a, b) => a + b, 0) / ceilingHeights.length;
+    console.log(`[CameraPlacement] Interior height: ${interiorHeight.toFixed(1)} (scene height: ${sceneSize.y.toFixed(1)}, ${ceilingHeights.length} probes)`);
+  }
+
+  // Use interior AABB for constraint scaling instead of full scene AABB
+  const interiorMaxDim = Math.max(sampleWidth, sampleDepth, interiorHeight);
+  const minDistance = interiorMaxDim * (minDistanceRatio || DEFAULT_MIN_DISTANCE_RATIO);
+  const minSpacing = interiorMaxDim * (minSpacingRatio || DEFAULT_MIN_SPACING_RATIO);
+
+  // For non-splat mode, use single fixed height
+  const fixedCamY = floorY + interiorHeight * (eyeHeightRatio || DEFAULT_EYE_HEIGHT_RATIO);
+
+  console.log(
+    `[CameraPlacement] mode=${splatMode ? "splat" : "standard"}, interiorMaxDim=${interiorMaxDim.toFixed(1)}, ` +
+    `floorY=${floorY.toFixed(1)}, interiorH=${interiorHeight.toFixed(1)}, ` +
+    `minDist=${minDistance.toFixed(1)}, minSpacing=${minSpacing.toFixed(1)}`
+  );
+
+  let currentMinDistance = minDistance;
+  let currentMinSpacing = minSpacing;
+  let stallCount = 0;
+  let lastPlacedAt = 0;
+
+  while (positions.length < count && attempts < maxAttempts) {
     attempts++;
 
-    // Random XZ within sample bounds
-    const x = sampleBounds.minX + Math.random() * (sampleBounds.maxX - sampleBounds.minX);
-    const z = sampleBounds.minZ + Math.random() * (sampleBounds.maxZ - sampleBounds.minZ);
+    if (attempts - lastPlacedAt > 2000 && stallCount < 5) {
+      stallCount++;
+      currentMinDistance *= 0.5;
+      currentMinSpacing *= 0.7;
+      console.log(
+        `[CameraPlacement] Relaxing (pass ${stallCount}): minDist=${currentMinDistance.toFixed(1)}, ` +
+        `minSpacing=${currentMinSpacing.toFixed(1)}, placed=${positions.length}/${count}`
+      );
+    }
+
+    const x = sampleBounds.minX + Math.random() * sampleWidth;
+    const z = sampleBounds.minZ + Math.random() * sampleDepth;
+
+    // Splat mode: sample from 3 height layers; standard: fixed height
+    const camY = splatMode
+      ? floorY + interiorHeight * pickSplatHeightRatio()
+      : fixedCamY;
+
     const candidate = new THREE.Vector3(x, camY, z);
 
-    // Must be inside the building (floor below + ceiling above)
     if (!isInsideMesh(bvh, candidate)) continue;
 
-    // Check distance to nearest surface (not too close to walls)
     const target = {};
     const hit = bvh.closestPointToPoint(candidate, target);
-    if (!hit || target.distance < minDistance) continue;
+    if (!hit || target.distance < currentMinDistance) continue;
 
-    // Check spacing from existing cameras
     const tooClose = positions.some(
-      (p) => p.distanceTo(candidate) < minSpacing
+      (p) => p.distanceTo(candidate) < currentMinSpacing
     );
     if (tooClose) continue;
 
     positions.push(candidate);
+    lastPlacedAt = attempts;
   }
 
   if (positions.length < count) {
     console.warn(
       `[CameraPlacement] Only placed ${positions.length}/${count} cameras after ${attempts} attempts. ` +
-      `Scene scale: ${maxDim.toFixed(1)}, minDist: ${minDistance.toFixed(2)}, floor: ${floorY.toFixed(2)}, camY: ${camY.toFixed(2)}`
+      `interiorMaxDim: ${interiorMaxDim.toFixed(1)}, minDist: ${currentMinDistance.toFixed(2)}, floor: ${floorY.toFixed(2)}`
     );
   }
 
-  return positions;
+  return { positions, interiorHeight, floorY: floorY };
 }
 
 /**
- * Compute camera orientations. Default: look at scene center.
- * If maximizeEntropy is true and detectedObjects are provided,
- * orient each camera toward the centroid of detected OOBB centers
- * that are visible from that position.
- *
- * @param {THREE.Vector3[]} positions - Camera positions
- * @param {THREE.Vector3} sceneCenter - Center of scene bounds
- * @param {object[]} detectedObjects - Array of OOBB data objects (optional)
- * @param {boolean} maximizeEntropy - Whether to optimize rotation for object visibility
- * @returns {THREE.Quaternion[]} Array of camera quaternions
+ * Compute camera orientations.
+ * - Default: look at scene center
+ * - maximizeEntropy: orient toward detected object clusters
+ * - splatMode: random yaw + height-dependent pitch for diverse coverage
  */
 export function computeCameraOrientations(
   positions,
   sceneCenter,
   detectedObjects = [],
-  maximizeEntropy = false
+  maximizeEntropy = false,
+  { splatMode = false, interiorHeight = 1, floorY = 0 } = {}
 ) {
   const quaternions = [];
   const fovRad = (BLENDER_FOV * Math.PI) / 180;
   const halfFov = fovRad / 2;
+  const interiorMaxDim = Math.max(interiorHeight, 1);
 
   for (const pos of positions) {
     let lookTarget;
 
-    if (maximizeEntropy && detectedObjects.length > 0) {
-      // Find the rotation that maximizes the number of detected objects in view
+    if (splatMode) {
+      // Random yaw for full 360-degree horizontal coverage
+      const yaw = Math.random() * Math.PI * 2;
+      const lookDist = interiorMaxDim * 0.5;
+
+      // Pitch depends on camera height layer
+      const heightFrac = interiorHeight > 0 ? (pos.y - floorY) / interiorHeight : 0.4;
+      let basePitchDeg;
+      if (heightFrac > 0.55) {
+        basePitchDeg = -20;  // high cameras look down
+      } else if (heightFrac < 0.25) {
+        basePitchDeg = 5;    // low cameras look slightly up
+      } else {
+        basePitchDeg = -5;   // mid cameras look slightly down
+      }
+      const pitchDeg = basePitchDeg + (Math.random() - 0.5) * 25;
+      const pitch = pitchDeg * Math.PI / 180;
+
+      lookTarget = new THREE.Vector3(
+        pos.x + Math.cos(yaw) * lookDist * Math.cos(pitch),
+        pos.y + Math.sin(pitch) * lookDist,
+        pos.z + Math.sin(yaw) * lookDist * Math.cos(pitch),
+      );
+    } else if (maximizeEntropy && detectedObjects.length > 0) {
       lookTarget = findBestLookTarget(pos, detectedObjects, halfFov);
     } else {
-      // Default: look at scene center at a slightly lower height
       lookTarget = sceneCenter.clone();
       lookTarget.y = pos.y - 0.5;
     }
 
-    // Compute quaternion using the same method as Three.js Object3D.lookAt
-    // Camera convention: -Z is forward (looking direction)
     const tempObj = new THREE.Object3D();
     tempObj.position.copy(pos);
     tempObj.lookAt(lookTarget);
-    const quaternion = tempObj.quaternion.clone();
-
-    quaternions.push(quaternion);
+    quaternions.push(tempObj.quaternion.clone());
   }
 
   return quaternions;
@@ -310,7 +391,7 @@ export function autoPlaceCameras(scene, count, detectedObjects = [], maximizeEnt
   const sceneCenter = new THREE.Vector3();
   bounds.getCenter(sceneCenter);
 
-  const positions = generateCameraPositions({
+  const { positions, interiorHeight, floorY: detectedFloorY } = generateCameraPositions({
     bvh,
     bounds,
     floorY,
@@ -319,16 +400,17 @@ export function autoPlaceCameras(scene, count, detectedObjects = [], maximizeEnt
     minDistanceRatio: params.minDistanceRatio,
     minSpacingRatio: params.minSpacingRatio,
     volumeConstraint: params.volumeConstraint,
+    splatMode: !!params.splatMode,
   });
 
   const quaternions = computeCameraOrientations(
     positions,
     sceneCenter,
     detectedObjects,
-    maximizeEntropy
+    maximizeEntropy,
+    { splatMode: !!params.splatMode, interiorHeight, floorY: detectedFloorY },
   );
 
-  // Clean up
   mergedGeo.dispose();
 
   return {

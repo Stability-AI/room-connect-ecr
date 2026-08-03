@@ -10,7 +10,8 @@ import { detectObjects, cullOverlappingOOBBs, mergeOverlappingOOBBs } from "./ut
 import { uploadSceneChunked } from "./utils/sceneUpload";
 import { v4 as uuidv4 } from "uuid";
 import { BLENDER_FOV } from "./components/CameraFrustum";
-import { autoPlaceCameras } from "./utils/cameraPlacement";
+import { autoPlaceCameras, mergeSceneGeometries, buildSceneBVH } from "./utils/cameraPlacement";
+import { analyzeDistribution } from "./utils/cameraAnalysis";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("connectivity");
@@ -45,6 +46,9 @@ export default function App() {
   // Scene lights state
   const [sceneLights, setSceneLights] = useState([]);
   const [selectedLightId, setSelectedLightId] = useState(null);
+
+  // Camera distribution analysis state
+  const [analysisData, setAnalysisData] = useState(null);
 
   // Camera management state
   const [cameras, setCameras] = useState([]);
@@ -341,6 +345,7 @@ export default function App() {
     setCameras([]);
     setSelectedCameraId(null);
     setActiveCameraView(null);
+    setAnalysisData(null);
   }, []);
 
   const handleAddLight = useCallback((lightType = "spot") => {
@@ -440,57 +445,66 @@ export default function App() {
       setAutoPlaceError(`Only ${result.cameras.length} of ${count} cameras could be placed. Consider relaxing the Advanced Settings or expanding the volume constraint.`);
     }
 
-    // Sequential placement: move the scene camera to each generated position/view,
-    // then call the same logic as "Place at View" for each one.
-    // Use setTimeout delays to mirror Place at View timing.
-    const cam = viewCameraRef.current;
-    const savedPos = cam.position.clone();
-    const savedQuat = cam.quaternion.clone();
+    // If cameras have pre-computed quaternions (splat mode), use them directly
+    // without going through OrbitControls (which would override the diverse orientations).
+    const hasSplatQuaternions = params.splatMode && result.cameras.length > 0 && result.cameras[0].quaternion;
 
-    const placeNext = (index) => {
-      if (index >= result.cameras.length) {
-        // Restore original camera position after all placements
-        cam.position.copy(savedPos);
-        cam.quaternion.copy(savedQuat);
-        return;
-      }
+    if (hasSplatQuaternions) {
+      const actualFov = viewCameraRef.current?.fov || BLENDER_FOV;
+      const newCameras = result.cameras.map((genCam, index) => ({
+        id: uuidv4(),
+        name: `Splat ${cameras.length + index + 1}`,
+        position: genCam.position,
+        quaternion: genCam.quaternion,
+        fov: actualFov,
+      }));
+      setCameras((prev) => [...prev, ...newCameras]);
+      setAnalysisData(null);
+      console.log(`[AutoPlace] Added ${newCameras.length} splat cameras with diverse orientations`);
+    } else {
+      // Standard mode: move scene camera to each position, let OrbitControls
+      // process through a render frame, then capture the quaternion.
+      const cam = viewCameraRef.current;
+      const savedPos = cam.position.clone();
+      const savedQuat = cam.quaternion.clone();
 
-      const genCam = result.cameras[index];
+      const placeNext = (index) => {
+        if (index >= result.cameras.length) {
+          cam.position.copy(savedPos);
+          cam.quaternion.copy(savedQuat);
+          return;
+        }
 
-      // Move scene camera to generated position
-      cam.position.set(genCam.position[0], genCam.position[1], genCam.position[2]);
+        const genCam = result.cameras[index];
+        cam.position.set(genCam.position[0], genCam.position[1], genCam.position[2]);
 
-      // Look at generated target (same as user orbiting to look at something)
-      if (genCam.lookTarget) {
-        cam.lookAt(genCam.lookTarget[0], genCam.lookTarget[1], genCam.lookTarget[2]);
-      }
+        if (genCam.lookTarget) {
+          cam.lookAt(genCam.lookTarget[0], genCam.lookTarget[1], genCam.lookTarget[2]);
+        }
 
-      // Wait one frame for R3F/OrbitControls to process, then capture
-      setTimeout(() => {
-        // Now read back the quaternion — same as handlePlaceCamera does
-        const currentCam = viewCameraRef.current;
-        const actualFov = currentCam.fov || BLENDER_FOV;
-        const newCamera = {
-          id: uuidv4(),
-          name: `Auto ${cameras.length + index + 1}`,
-          position: [currentCam.position.x, currentCam.position.y, currentCam.position.z],
-          quaternion: [currentCam.quaternion.x, currentCam.quaternion.y, currentCam.quaternion.z, currentCam.quaternion.w],
-          fov: actualFov,
-        };
+        setTimeout(() => {
+          const currentCam = viewCameraRef.current;
+          const actualFov = currentCam.fov || BLENDER_FOV;
+          const newCamera = {
+            id: uuidv4(),
+            name: `Auto ${cameras.length + index + 1}`,
+            position: [currentCam.position.x, currentCam.position.y, currentCam.position.z],
+            quaternion: [currentCam.quaternion.x, currentCam.quaternion.y, currentCam.quaternion.z, currentCam.quaternion.w],
+            fov: actualFov,
+          };
 
-        console.log(
-          `[AutoPlace] ${newCamera.name}: pos=[${newCamera.position.map(v=>v.toFixed(2))}] ` +
-          `quat=[${newCamera.quaternion.map(v=>v.toFixed(4))}]`
-        );
+          console.log(
+            `[AutoPlace] ${newCamera.name}: pos=[${newCamera.position.map(v=>v.toFixed(2))}] ` +
+            `quat=[${newCamera.quaternion.map(v=>v.toFixed(4))}]`
+          );
 
-        setCameras((prev) => [...prev, newCamera]);
+          setCameras((prev) => [...prev, newCamera]);
+          placeNext(index + 1);
+        }, 100);
+      };
 
-        // Place next camera
-        placeNext(index + 1);
-      }, 100); // 100ms delay per camera to let the render loop process
-    };
-
-    placeNext(0);
+      placeNext(0);
+    }
   }, [cameras.length, detectedObjects]);
 
   const getCameraExportData = useCallback(() => {
@@ -521,6 +535,23 @@ export default function App() {
       }),
     };
   }, [cameras, fovOverride, renderWidth, renderHeight]);
+
+  const handleAnalyzeDistribution = useCallback(() => {
+    if (!sceneRef.current || cameras.length < 3) {
+      setAnalysisData(null);
+      return;
+    }
+    setAnalysisData(null);
+    requestAnimationFrame(() => {
+      const mergedGeo = mergeSceneGeometries(sceneRef.current);
+      if (!mergedGeo) return;
+      const bvh = buildSceneBVH(mergedGeo);
+      const effectiveFov = fovOverride || 60;
+      const result = analyzeDistribution(cameras, bvh, mergedGeo, effectiveFov);
+      mergedGeo.dispose();
+      setAnalysisData(result);
+    });
+  }, [cameras, fovOverride]);
 
   const renderSidePanel = () => {
     switch (activeTab) {
@@ -576,6 +607,8 @@ export default function App() {
             onLoadLights={handleLoadLights}
             selectedLightId={selectedLightId}
             onSelectLight={setSelectedLightId}
+            analysisData={analysisData}
+            onAnalyzeDistribution={handleAnalyzeDistribution}
             exportCameraData={getCameraExportData}
             hasDetectedObjects={detectedObjects.length > 0}
             sessionVolumes={volumes}
@@ -645,6 +678,7 @@ export default function App() {
           sceneLights={activeTab === "rendering" ? sceneLights : []}
           selectedLightId={selectedLightId}
           onSelectLight={setSelectedLightId}
+          analysisData={activeTab === "rendering" ? analysisData : null}
         />
         {renderSidePanel()}
       </div>

@@ -78,9 +78,22 @@ Open **http://localhost:3000**
 - Override lighting with brightness control
 - 32-bit EXR depth maps (optimized: 1-sample Cycles, ~32x faster than color pass)
 - Real-time render log streaming (SSE)
-- ZIP download with renders + depth maps + .blend file + camera intrinsics/extrinsics
+- ZIP download with renders + depth maps + .blend file (with persisted cameras and lights) + camera intrinsics/extrinsics
 - Dynamic frustum aspect ratio matching render dimensions
 - Non-convergence dialog with actionable suggestions
+
+### Gaussian Splatting Dataset Generation
+- Generate Nerfstudio-compatible training datasets (80-400 high-fidelity views)
+- 4 quality presets: Draft (1440p/32 samples), Fast (1080p/256), Balanced (1440p/512), Hero (4K/1024)
+- 3-layer camera height distribution optimized for 3DGS reconstruction (low/mid/high)
+- Diverse camera orientations: random yaw + height-dependent pitch for full scene coverage
+- Interior AABB-based constraint scaling adapts to room size automatically
+- Nerfstudio `transforms.json` export (OPENCV model, `camera_angle_x/y`, `aabb_scale` from scene geometry)
+- Preview cameras before rendering to verify coverage
+- Camera distribution analysis: spatial uniformity (k-NN), angular diversity, frustum coverage with colored 3D visualization and surface heatmap
+- No-lights warning prevents wasting render time on dark scenes
+- Optional depth maps for depth-supervised training
+- Optional HDR EXR output (16-bit half or 32-bit float) with log(1+x) transform for HDR-aware splat methods
 
 ### Scene Management
 - Hot-swap GLB: replace the loaded scene without page refresh, preserving cameras, lights, and render settings

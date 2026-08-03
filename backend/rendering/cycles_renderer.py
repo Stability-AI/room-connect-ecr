@@ -346,6 +346,47 @@ class CyclesRenderer:
 
         self._capture_log(f"Added {len(lights)} user-placed lights")
 
+    def _persist_cameras(self, cameras):
+        """Create persistent Blender Camera objects from the user's camera list.
+
+        Called before saving .blend so all user cameras are included in the file.
+        Uses the same Y-up to Z-up coordinate conversion as render_all_views.
+        """
+        import math
+        from mathutils import Quaternion as MQuaternion
+
+        yup_to_zup = MQuaternion((math.cos(math.pi / 4), math.sin(math.pi / 4), 0, 0))
+
+        first_cam_obj = None
+        for idx, cam_data in enumerate(cameras):
+            cam_name = cam_data.get("name", f"Camera_{idx}")
+
+            cam_blender = bpy.data.cameras.new(cam_name)
+            cam_blender.sensor_fit = 'VERTICAL'
+            cam_blender.angle = (cam_data.get("fov", 49.13) * math.pi) / 180.0
+            cam_blender.clip_start = 0.1
+            cam_blender.clip_end = 10000
+
+            cam_obj = bpy.data.objects.new(cam_name, cam_blender)
+            bpy.context.collection.objects.link(cam_obj)
+
+            pos = cam_data["position"]
+            cam_obj.location = (pos[0], -pos[2], pos[1])
+
+            q = cam_data["quaternion"]
+            threejs_quat = MQuaternion((q[3], q[0], q[1], q[2]))
+            blender_quat = yup_to_zup @ threejs_quat
+            cam_obj.rotation_mode = "QUATERNION"
+            cam_obj.rotation_quaternion = blender_quat
+
+            if first_cam_obj is None:
+                first_cam_obj = cam_obj
+
+        if first_cam_obj:
+            bpy.context.scene.camera = first_cam_obj
+
+        self._capture_log(f"Persisted {len(cameras)} cameras to .blend (active: {cameras[0].get('name', 'Camera_0') if cameras else 'none'})")
+
     def _ensure_lighting(self, override_lighting: bool = False, brightness: float = 1.5):
         """Add or override lighting in the scene."""
         has_lights = any(obj.type == "LIGHT" for obj in bpy.data.objects)
@@ -664,8 +705,9 @@ class CyclesRenderer:
             # Clean up camera object
             bpy.data.objects.remove(cam_obj, do_unlink=True)
 
-        # Save .blend file if requested
+        # Save .blend file if requested (with persistent cameras)
         if include_blend:
+            self._persist_cameras(cameras)
             blend_path = str(self.output_dir / f"scene_{self.render_id}.blend")
             bpy.ops.wm.save_as_mainfile(filepath=blend_path)
             results["files"].append({"type": "blend", "path": blend_path, "filename": f"scene_{self.render_id}.blend"})
@@ -674,6 +716,303 @@ class CyclesRenderer:
         self._capture_log(f"Completed {total} views")
         results["logs"] = self.log_buffer
         return results
+
+    # =========================================================================
+    # GAUSSIAN SPLAT DATASET GENERATION
+    # =========================================================================
+
+    SPLAT_PRESETS = {
+        "draft":    {"resolution": (2560, 1440), "samples": 32,   "max_bounces": 8,  "diffuse_bounces": 4, "glossy_bounces": 4},
+        "fast":     {"resolution": (1920, 1080), "samples": 256,  "max_bounces": 8,  "diffuse_bounces": 4, "glossy_bounces": 4},
+        "balanced": {"resolution": (2560, 1440), "samples": 512,  "max_bounces": 12, "diffuse_bounces": 8, "glossy_bounces": 6},
+        "hero":     {"resolution": (3840, 2160), "samples": 1024, "max_bounces": 12, "diffuse_bounces": 8, "glossy_bounces": 6},
+    }
+
+    def configure_splat_settings(self, preset="balanced", resolution_x=None, resolution_y=None, samples=None, hdr_format=None):
+        """Configure Cycles for high-fidelity splat training data.
+
+        hdr_format: None for PNG, "exr16" for 16-bit half EXR, "exr32" for 32-bit float EXR.
+        """
+        p = self.SPLAT_PRESETS.get(preset, self.SPLAT_PRESETS["balanced"])
+        rx = resolution_x or p["resolution"][0]
+        ry = resolution_y or p["resolution"][1]
+        s = samples or p["samples"]
+
+        scene = bpy.context.scene
+        scene.render.engine = "CYCLES"
+        self._enable_gpu()
+
+        scene.render.resolution_x = rx
+        scene.render.resolution_y = ry
+        scene.render.resolution_percentage = 100
+
+        scene.cycles.samples = s
+        scene.cycles.seed = 0
+        scene.cycles.use_animated_seed = False
+
+        scene.cycles.use_adaptive_sampling = True
+        scene.cycles.adaptive_threshold = 0.01
+        scene.cycles.adaptive_min_samples = 256
+
+        scene.cycles.use_denoising = True
+        try:
+            scene.cycles.denoiser = "OPENIMAGEDENOISE"
+            scene.cycles.denoising_prefilter = "ACCURATE"
+        except Exception:
+            pass
+
+        scene.cycles.sample_clamp_direct = 0
+        scene.cycles.sample_clamp_indirect = 20
+
+        scene.cycles.max_bounces = p["max_bounces"]
+        scene.cycles.diffuse_bounces = p["diffuse_bounces"]
+        scene.cycles.glossy_bounces = p["glossy_bounces"]
+        scene.cycles.transmission_bounces = 8
+        scene.cycles.transparent_max_bounces = 8
+        scene.cycles.caustics_reflective = False
+        scene.cycles.caustics_refractive = False
+
+        scene.render.use_persistent_data = True
+        scene.cycles.use_guiding = False
+
+        scene.render.film_transparent = False
+
+        if hdr_format:
+            scene.render.image_settings.file_format = "OPEN_EXR"
+            scene.render.image_settings.color_depth = "16" if hdr_format == "exr16" else "32"
+            scene.render.image_settings.exr_codec = "ZIP"
+            scene.render.image_settings.color_mode = "RGB"
+            scene.view_settings.view_transform = "Raw"
+            for vl in scene.view_layers:
+                vl.use_pass_z = False
+                vl.use_pass_normal = False
+                vl.use_pass_vector = False
+                vl.use_pass_mist = False
+        else:
+            scene.render.image_settings.file_format = "PNG"
+            scene.render.image_settings.color_mode = "RGB"
+            scene.render.image_settings.color_depth = "8"
+            scene.view_settings.view_transform = "Standard"
+
+        scene.view_settings.look = "None"
+        scene.view_settings.exposure = 0.0
+        scene.view_settings.gamma = 1.0
+
+        scene.use_nodes = False
+        scene.render.use_compositing = False
+
+        fmt_label = hdr_format.upper() if hdr_format else "PNG"
+        self._capture_log(
+            f"Splat settings: {rx}x{ry}, {s} samples, {p['max_bounces']} bounces, "
+            f"preset={preset}, format={fmt_label}, device={scene.cycles.device}"
+        )
+        return rx, ry
+
+    def _get_camera_matrix_world(self, cam_obj):
+        """Extract camera matrix_world in OpenGL convention (row-major 4x4).
+
+        Blender's camera convention (-Z forward, +Y up) matches OpenGL,
+        so matrix_world can be used directly for Nerfstudio transforms.json.
+        """
+        m = cam_obj.matrix_world
+        return [[m[row][col] for col in range(4)] for row in range(4)]
+
+    def _get_camera_intrinsics(self, cam_obj, width, height):
+        """Extract focal length in pixels from Blender camera data."""
+        cam_data = cam_obj.data
+        sensor_width = cam_data.sensor_width
+        focal_mm = cam_data.lens
+
+        if cam_data.sensor_fit == "VERTICAL":
+            sensor_height = cam_data.sensor_height
+            fy = (height * focal_mm) / sensor_height
+            fx = fy
+        else:
+            fx = (width * focal_mm) / sensor_width
+            fy = fx
+
+        return fx, fy, width / 2.0, height / 2.0
+
+    def _compute_scene_aabb_scale(self):
+        """Compute the max dimension of the scene geometry AABB."""
+        from mathutils import Vector
+        min_co = Vector((float("inf"),) * 3)
+        max_co = Vector((float("-inf"),) * 3)
+        for obj in bpy.data.objects:
+            if obj.type == "MESH":
+                bbox = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+                for co in bbox:
+                    min_co.x = min(min_co.x, co.x)
+                    min_co.y = min(min_co.y, co.y)
+                    min_co.z = min(min_co.z, co.z)
+                    max_co.x = max(max_co.x, co.x)
+                    max_co.y = max(max_co.y, co.y)
+                    max_co.z = max(max_co.z, co.z)
+        return float(max(max_co.x - min_co.x, max_co.y - min_co.y, max_co.z - min_co.z))
+
+    def export_nerfstudio_transforms(self, camera_entries, width, height, output_path):
+        """Write Nerfstudio-compatible transforms.json in PINHOLE format."""
+        import math
+        if not camera_entries:
+            return
+
+        fx, fy, cx, cy = camera_entries[0]["intrinsics"]
+        camera_angle_x = 2.0 * math.atan(width / (2.0 * fx))
+        camera_angle_y = 2.0 * math.atan(height / (2.0 * fy))
+        aabb_scale = self._compute_scene_aabb_scale()
+
+        transforms = {
+            "camera_model": "OPENCV",
+            "w": width,
+            "h": height,
+            "camera_angle_x": camera_angle_x,
+            "camera_angle_y": camera_angle_y,
+            "fl_x": fx,
+            "fl_y": fy,
+            "cx": cx,
+            "cy": cy,
+            "k1": 0.0,
+            "k2": 0.0,
+            "p1": 0.0,
+            "p2": 0.0,
+            "aabb_scale": round(aabb_scale, 6),
+            "frames": [
+                {
+                    "file_path": entry["file_path"],
+                    "transform_matrix": entry["transform_matrix"],
+                }
+                for entry in camera_entries
+            ],
+        }
+
+        with open(output_path, "w") as f:
+            json.dump(transforms, f, indent=4)
+        self._capture_log(f"Saved transforms.json ({len(camera_entries)} frames, aabb_scale={aabb_scale:.1f})")
+
+    def _apply_log_transform_exr(self, exr_path):
+        """Apply log(1 + x) transform to an EXR file in-place.
+
+        Compresses HDR dynamic range into a space where 3DGS loss functions
+        converge properly. Monotonic and invertible via exp(y) - 1.
+        """
+        import numpy as np
+
+        img = bpy.data.images.load(exr_path)
+        w, h = img.size
+        pixels = np.array(img.pixels[:], dtype=np.float32).reshape(h, w, img.channels)
+
+        pixels[..., :3] = np.log1p(np.maximum(pixels[..., :3], 0))
+
+        img.pixels = pixels.flatten().tolist()
+        img.save()
+        bpy.data.images.remove(img)
+
+    def render_splat_dataset(self, cameras, preset="balanced", resolution_x=None,
+                             resolution_y=None, samples=None, generate_depth=False,
+                             override_lighting=False, lighting_brightness=1.5,
+                             lights=None, hdr_format=None, log_transform=False):
+        """Render all cameras at high fidelity and export Nerfstudio dataset.
+
+        hdr_format: None for PNG, "exr16" for 16-bit half EXR, "exr32" for 32-bit float EXR.
+        log_transform: If True and hdr_format is set, apply log(1+x) to EXR frames.
+        """
+        import math
+        from mathutils import Quaternion as MQuaternion, Vector, Matrix
+
+        self.log_buffer = []
+        rx, ry = self.configure_splat_settings(preset, resolution_x, resolution_y, samples, hdr_format=hdr_format)
+        frame_ext = ".exr" if hdr_format else ".png"
+
+        self._ensure_lighting(override_lighting=override_lighting, brightness=lighting_brightness)
+        if lights:
+            self._add_user_lights(lights)
+
+        yup_to_zup = MQuaternion((math.cos(math.pi / 4), math.sin(math.pi / 4), 0, 0))
+
+        results = {"files": [], "logs": []}
+        camera_entries = []
+        total = len(cameras)
+
+        images_dir = self.output_dir / f"splat_{self.render_id}" / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        depth_dir = self.output_dir / f"splat_{self.render_id}" / "depth"
+        if generate_depth:
+            depth_dir.mkdir(parents=True, exist_ok=True)
+
+        for idx, cam_data in enumerate(cameras):
+            cam_name = cam_data.get("name", f"Camera_{idx}")
+            self._capture_log(f"Rendering splat frame {idx + 1}/{total}: {cam_name}")
+
+            bpy.ops.object.camera_add()
+            cam_obj = bpy.context.object
+            cam_obj.name = f"SplatCam_{idx}"
+            cam_obj.data.sensor_fit = 'VERTICAL'
+            cam_obj.data.angle = (cam_data.get("fov", 49.13) * 3.14159265) / 180.0
+            cam_obj.data.clip_start = 0.1
+            cam_obj.data.clip_end = 10000
+
+            pos = cam_data["position"]
+            cam_obj.location = (pos[0], -pos[2], pos[1])
+
+            q = cam_data["quaternion"]
+            threejs_quat = MQuaternion((q[3], q[0], q[1], q[2]))
+            blender_quat = yup_to_zup @ threejs_quat
+            cam_obj.rotation_mode = "QUATERNION"
+            cam_obj.rotation_quaternion = blender_quat
+
+            bpy.context.scene.camera = cam_obj
+
+            frame_filename = f"{idx:04d}{frame_ext}"
+            frame_path = str(images_dir / frame_filename)
+            bpy.context.scene.render.filepath = frame_path
+            bpy.ops.render.render(write_still=True)
+            results["files"].append({"type": "color", "path": frame_path, "filename": f"images/{frame_filename}"})
+
+            transform_matrix = self._get_camera_matrix_world(cam_obj)
+            intrinsics = self._get_camera_intrinsics(cam_obj, rx, ry)
+            camera_entries.append({
+                "file_path": f"images/{frame_filename}",
+                "transform_matrix": transform_matrix,
+                "intrinsics": intrinsics,
+            })
+
+            if generate_depth:
+                self.configure_depthmap_settings()
+                depth_filename = f"{idx:04d}.png"
+                depth_path = str(depth_dir / depth_filename)
+                bpy.context.scene.render.filepath = depth_path
+                bpy.ops.render.render(write_still=True)
+                results["files"].append({"type": "depth", "path": depth_path, "filename": f"depth/{depth_filename}"})
+                self.configure_splat_settings(preset, resolution_x, resolution_y, samples, hdr_format=hdr_format)
+
+            bpy.data.objects.remove(cam_obj, do_unlink=True)
+            self._capture_log(f"  Frame {idx + 1}/{total} complete")
+
+        if hdr_format and log_transform:
+            self._capture_log("Applying log(1+x) transform to HDR frames...")
+            for file_info in results["files"]:
+                if file_info["type"] == "color" and file_info["path"].endswith(".exr"):
+                    self._apply_log_transform_exr(file_info["path"])
+            self._capture_log("Log transform complete")
+
+        transforms_path = str(self.output_dir / f"splat_{self.render_id}" / "transforms.json")
+        self.export_nerfstudio_transforms(camera_entries, rx, ry, transforms_path)
+        results["files"].append({"type": "transforms", "path": transforms_path, "filename": "transforms.json"})
+
+        self._capture_log(f"Splat dataset complete: {total} frames + transforms.json")
+        results["logs"] = self.log_buffer
+        return results
+
+    def create_splat_zip(self, results: dict) -> str:
+        """Package splat dataset into a zip with Nerfstudio folder structure."""
+        zip_path = str(self.output_dir / f"splat_dataset_{self.render_id}.zip")
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_info in results["files"]:
+                zf.write(file_info["path"], file_info["filename"])
+
+        self._capture_log(f"Created splat dataset zip: {zip_path}")
+        return zip_path
 
     def create_zip(self, results: dict) -> str:
         """Package all rendered files into a zip archive."""

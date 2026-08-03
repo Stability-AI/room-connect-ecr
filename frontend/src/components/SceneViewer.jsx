@@ -2,6 +2,7 @@ import React, { useRef, useState, useCallback, useEffect, useMemo } from "react"
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls, useGLTF, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { v4 as uuidv4 } from "uuid";
 import VolumeBox from "./VolumeBox";
 import DrawingVolume from "./DrawingVolume";
@@ -148,6 +149,96 @@ function SceneModel({ url, shadingMode, onSceneReady }) {
   }, [scene, onSceneReady]);
 
   return <primitive object={scene} />;
+}
+
+function CoverageHeatmap({ scene, faceCounts }) {
+  const meshRef = useRef();
+
+  useEffect(() => {
+    if (!scene || !faceCounts || faceCounts.length === 0) return;
+
+    const geometries = [];
+    const faceOffsets = [];
+    let faceOffset = 0;
+
+    scene.traverse((child) => {
+      if (child.isMesh && child.geometry) {
+        const geo = child.geometry;
+        const posAttr = geo.getAttribute("position");
+        if (!posAttr) return;
+
+        const cloned = new THREE.BufferGeometry();
+        cloned.setAttribute("position", posAttr.clone());
+        if (geo.index) cloned.setIndex(geo.index.clone());
+        cloned.applyMatrix4(child.matrixWorld);
+
+        const numFaces = geo.index ? geo.index.count / 3 : posAttr.count / 3;
+        faceOffsets.push({ geo: cloned, offset: faceOffset, count: numFaces });
+        faceOffset += numFaces;
+        geometries.push(cloned);
+      }
+    });
+
+    if (geometries.length === 0) return;
+
+    try {
+      const merged = mergeGeometries(geometries, false);
+      if (!merged) return;
+
+      const posAttr = merged.getAttribute("position");
+      const vertexCount = posAttr.count;
+      const colors = new Float32Array(vertexCount * 3);
+
+      const idx = merged.index;
+      const totalMergedFaces = idx ? idx.count / 3 : vertexCount / 3;
+
+      for (let fi = 0; fi < totalMergedFaces; fi++) {
+        const count = fi < faceCounts.length ? faceCounts[fi] : 0;
+        let r, g, b, a;
+        if (count === 0) { r = 0.4; g = 0.1; b = 0.1; }
+        else if (count <= 2) { r = 1; g = 0.5; b = 0.1; }
+        else if (count <= 5) { r = 1; g = 1; b = 0.2; }
+        else if (count <= 10) { r = 0.2; g = 0.8; b = 0.3; }
+        else { r = 0.2; g = 0.4; b = 1; }
+
+        if (idx) {
+          for (let v = 0; v < 3; v++) {
+            const vi = idx.getX(fi * 3 + v);
+            colors[vi * 3] = r;
+            colors[vi * 3 + 1] = g;
+            colors[vi * 3 + 2] = b;
+          }
+        } else {
+          for (let v = 0; v < 3; v++) {
+            const vi = fi * 3 + v;
+            colors[vi * 3] = r;
+            colors[vi * 3 + 1] = g;
+            colors[vi * 3 + 2] = b;
+          }
+        }
+      }
+
+      merged.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+      if (meshRef.current) {
+        meshRef.current.geometry.dispose();
+        meshRef.current.geometry = merged;
+      }
+    } catch (e) {
+      console.warn("[CoverageHeatmap] Failed to build heatmap:", e);
+    }
+
+    return () => {
+      geometries.forEach((g) => g.dispose());
+    };
+  }, [scene, faceCounts]);
+
+  return (
+    <mesh ref={meshRef} renderOrder={2}>
+      <bufferGeometry />
+      <meshBasicMaterial vertexColors transparent opacity={0.35} side={THREE.DoubleSide} depthWrite={false} />
+    </mesh>
+  );
 }
 
 function StudioLighting({ brightness }) {
@@ -308,6 +399,7 @@ export default function SceneViewer({
   sceneLights = [],
   selectedLightId,
   onSelectLight,
+  analysisData,
 }) {
   const [sceneHasLights, setSceneHasLights] = useState(false);
   const sceneObjRef = useRef(null);
@@ -384,6 +476,29 @@ export default function SceneViewer({
         {showOOBBs && detectedObjects && detectedObjects.map((obj, i) => (
           <OOBBOverlay key={`oobb-${i}`} oobb={obj} />
         ))}
+
+        {/* Camera distribution analysis spheres */}
+        {analysisData && analysisData.spatial.perCamera && (() => {
+          const camCount = Math.min(cameras.length, analysisData.spatial.perCamera.length);
+          const bounds = sceneObjRef.current ? new THREE.Box3().setFromObject(sceneObjRef.current) : null;
+          const sceneSize = bounds ? bounds.getSize(new THREE.Vector3()) : new THREE.Vector3(100, 100, 100);
+          const sphereRadius = Math.max(sceneSize.x, sceneSize.y, sceneSize.z) * 0.001;
+          return cameras.slice(0, camCount).map((cam, i) => {
+            const ratio = analysisData.spatial.perCamera[i];
+            const color = ratio > 2.0 ? "#0066ff"
+                        : ratio > 0.7 ? "#00cc44"
+                        : ratio > 0.3 ? "#ffcc00"
+                        : "#ff3300";
+            return (
+              <mesh key={`analysis-${cam.id}`} position={cam.position} renderOrder={10}>
+                <sphereGeometry args={[sphereRadius, 10, 10]} />
+                <meshBasicMaterial color={color} transparent opacity={0.7} depthTest={false} />
+              </mesh>
+            );
+          });
+        })()}
+
+        
 
         {/* Scene lights gizmos: cone for spot, plane for area */}
         {sceneLights.map((light) => {

@@ -38,6 +38,8 @@ export default function RenderingPanel({
   uploadProgress,
   selectedLightId,
   onSelectLight,
+  analysisData,
+  onAnalyzeDistribution,
 }) {
   const [cameraCount, setCameraCount] = useState(10);
   const [maximizeEntropy, setMaximizeEntropy] = useState(false);
@@ -88,6 +90,17 @@ export default function RenderingPanel({
   const [renderStatus, setRenderStatus] = useState("");
   const [renderLogs, setRenderLogs] = useState([]);
   const [renderResults, setRenderResults] = useState(null);
+
+  // Splat dataset state
+  const [splatCount, setSplatCount] = useState(200);
+  const [splatPreset, setSplatPreset] = useState("balanced");
+  const [splatDepth, setSplatDepth] = useState(false);
+  const [splatHdr, setSplatHdr] = useState(false);
+  const [splatHdrDepth, setSplatHdrDepth] = useState("16");
+  const [splatLogTransform, setSplatLogTransform] = useState(true);
+  const [showSplatDialog, setShowSplatDialog] = useState(null); // null | "warning" | "confirm"
+  const [isSplatRendering, setIsSplatRendering] = useState(false);
+  const [splatResults, setSplatResults] = useState(null);
 
   // Notify parent of FOV changes
   useEffect(() => {
@@ -410,6 +423,137 @@ export default function RenderingPanel({
     }
   };
 
+  // --- Splat dataset handlers ---
+
+  const SPLAT_PRESETS = {
+    draft:    { label: "Draft",    res: "2560x1440", samples: 32,   est: "20-40 min" },
+    fast:     { label: "Fast",     res: "1920x1080", samples: 256,  est: "3-6 hours" },
+    balanced: { label: "Balanced", res: "2560x1440", samples: 512,  est: "8-16 hours" },
+    hero:     { label: "Hero",     res: "3840x2160", samples: 1024, est: "24-48 hours" },
+  };
+
+  const handleSplatGenerate = () => {
+    const hasLights = sceneLights.length > 0 || overrideLighting;
+    if (!hasLights) {
+      setShowSplatDialog("warning");
+    } else {
+      setShowSplatDialog("confirm");
+    }
+  };
+
+  const getSplatPlacementParams = () => ({
+    minSpacingRatio: Math.max(0.002, 0.03 * (50 / splatCount)),
+    minDistanceRatio: Math.max(0.003, 0.01 * (50 / splatCount)),
+    splatMode: true,
+  });
+
+  const handleSplatPreviewCameras = () => {
+    setShowSplatDialog(null);
+    if (onAutoPlaceCameras) {
+      onAutoPlaceCameras(splatCount, false, getSplatPlacementParams());
+    }
+  };
+
+  const startSplatRender = async () => {
+    setIsSplatRendering(true);
+    setRenderStatus("Starting splat dataset render...");
+    setRenderLogs([]);
+    setSplatResults(null);
+
+    try {
+      const fov = propFovOverride || 60;
+      const response = await fetch("/api/render-splat-dataset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneId: sceneFileId,
+          preset: splatPreset,
+          generateDepth: splatDepth,
+          hdrFormat: splatHdr ? `exr${splatHdrDepth}` : null,
+          logTransform: splatHdr && splatLogTransform,
+          overrideLighting: overrideLighting,
+          lightingBrightness: lightingBrightness,
+          lights: sceneLights,
+          cameras: cameras.map((c) => ({
+            id: c.id,
+            name: c.name,
+            position: c.position,
+            quaternion: c.quaternion,
+            fov: fov,
+          })),
+        }),
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let currentEvent = null;
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            currentEvent = line.slice(7);
+          } else if (line.startsWith("data: ") && currentEvent) {
+            const data = line.slice(6);
+            if (currentEvent === "log") {
+              setRenderLogs((prev) => [...prev, data]);
+              setRenderStatus(data);
+            } else if (currentEvent === "result") {
+              try {
+                const result = JSON.parse(data);
+                setSplatResults(result);
+                setRenderStatus(`Splat dataset complete: ${result.frameCount} frames`);
+              } catch (e) { /* ignore parse errors */ }
+            } else if (currentEvent === "error") {
+              try {
+                const err = JSON.parse(data);
+                setRenderStatus(`Splat render failed: ${err.error}`);
+              } catch (e) {
+                setRenderStatus("Splat render failed");
+              }
+            }
+            currentEvent = null;
+          }
+        }
+      }
+    } catch (err) {
+      setRenderStatus(`Splat render failed: ${err.message}`);
+    } finally {
+      setIsSplatRendering(false);
+    }
+  };
+
+  const handleSplatRenderCurrent = () => {
+    setShowSplatDialog(null);
+    if (cameras.length === 0) return;
+    startSplatRender();
+  };
+
+  const handleSplatStartRender = async () => {
+    setShowSplatDialog(null);
+    if (onAutoPlaceCameras) {
+      onAutoPlaceCameras(splatCount, false, getSplatPlacementParams());
+      await new Promise((r) => setTimeout(r, splatCount * 110));
+    }
+    startSplatRender();
+  };
+
+  const handleSplatDownload = () => {
+    if (splatResults && splatResults.zip) {
+      const a = document.createElement("a");
+      a.href = splatResults.zip;
+      a.download = "splat_dataset.zip";
+      a.click();
+    }
+  };
+
   return (
     <div className="side-panel">
       <h3>Rendering</h3>
@@ -643,6 +787,30 @@ export default function RenderingPanel({
                   </button>
                 </div>
               </>
+            )}
+
+            {cameras.length >= 3 && (
+              <div style={{ marginTop: 8 }}>
+                <button
+                  className="btn btn-toggle"
+                  onClick={onAnalyzeDistribution}
+                  style={{ width: "100%" }}
+                >
+                  Analyze Distribution
+                </button>
+                {analysisData && (
+                  <div style={{ marginTop: 8, padding: "8px 10px", background: "var(--bg-secondary)", borderRadius: 4, fontSize: "0.78rem", lineHeight: 1.6 }}>
+                    <div><strong>Quality Score: {analysisData.score}/100</strong></div>
+                    <div style={{ color: analysisData.spatial.cv < 0.3 ? "#00cc44" : analysisData.spatial.cv < 0.7 ? "#ffcc00" : "#ff3300" }}>
+                      Spatial: CV={analysisData.spatial.cv.toFixed(2)} ({analysisData.interpretation})
+                    </div>
+                    <div>Angular: {analysisData.angular.meanAngle.toFixed(1)}° mean divergence</div>
+                    <div>Ray hits: {analysisData.coverage.hitRate?.toFixed(1)}% of rays hit geometry</div>
+                    <div>Multi-view: {analysisData.coverage.multiViewPct.toFixed(1)}% of hit faces seen by 3+ cameras</div>
+                    <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>{analysisData.coverage.uniqueFacesHit?.toLocaleString()} unique faces observed</div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -1003,6 +1171,158 @@ export default function RenderingPanel({
             </div>
           )}
         </>
+      )}
+
+      {/* --- Gaussian Splat Dataset Section --- */}
+      {hasScene && (
+        <div className="panel-section" style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 16 }}>
+          <label className="panel-label">Gaussian Splat Dataset</label>
+          <p className="panel-hint" style={{ marginBottom: 8 }}>
+            Generate a Nerfstudio-compatible training dataset with high-fidelity renders and camera transforms.
+          </p>
+
+          <div className="panel-row">
+            <label className="panel-sublabel">Views</label>
+            <input
+              type="range"
+              className="cull-slider"
+              min={80}
+              max={400}
+              step={10}
+              value={splatCount}
+              onChange={(e) => setSplatCount(parseInt(e.target.value))}
+              style={{ flex: 1 }}
+            />
+            <EditableValue value={splatCount} onChange={(v) => setSplatCount(Math.round(v))} min={80} max={400} defaultValue={200} format={(v) => String(v)} />
+          </div>
+
+          <div className="panel-row">
+            <label className="panel-sublabel">Preset</label>
+            <select
+              value={splatPreset}
+              onChange={(e) => setSplatPreset(e.target.value)}
+              style={{ flex: 1, background: "var(--bg-secondary)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 4, padding: "4px 8px", fontSize: "0.8rem" }}
+            >
+              {Object.entries(SPLAT_PRESETS).map(([key, p]) => (
+                <option key={key} value={key}>{p.label} — {p.res}, {p.samples} samples</option>
+              ))}
+            </select>
+          </div>
+
+          <p className="panel-hint" style={{ fontSize: "0.72rem", marginTop: 4 }}>
+            Est. render time (CPU): {SPLAT_PRESETS[splatPreset].est} for {splatCount} views
+          </p>
+
+          <label className="checkbox-row" style={{ marginTop: 8 }}>
+            <input type="checkbox" checked={splatDepth} onChange={(e) => setSplatDepth(e.target.checked)} />
+            <span>Include depth maps (for depth-supervised training)</span>
+          </label>
+
+          <label className="checkbox-row" style={{ marginTop: 4 }}>
+            <input type="checkbox" checked={splatHdr} onChange={(e) => setSplatHdr(e.target.checked)} />
+            <span title="For HDR-aware splat methods only. Standard splatfacto expects PNG.">Render as HDR (OpenEXR)</span>
+          </label>
+          {splatHdr && (
+            <>
+              <div className="panel-row" style={{ marginTop: 4, marginLeft: 20 }}>
+                <label className="panel-sublabel">Bit depth</label>
+                <select
+                  value={splatHdrDepth}
+                  onChange={(e) => setSplatHdrDepth(e.target.value)}
+                  style={{ flex: 1, background: "var(--bg-secondary)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 4, padding: "4px 8px", fontSize: "0.8rem" }}
+                >
+                  <option value="16">16-bit half (recommended)</option>
+                  <option value="32">32-bit float</option>
+                </select>
+              </div>
+              <label className="checkbox-row" style={{ marginTop: 4, marginLeft: 20 }}>
+                <input type="checkbox" checked={splatLogTransform} onChange={(e) => setSplatLogTransform(e.target.checked)} />
+                <span title="Applies log(1+x) to compress dynamic range for stable training. Invertible via exp(y)-1.">Apply log(1+x) transform (recommended)</span>
+              </label>
+            </>
+          )}
+
+          <div className="panel-actions" style={{ marginTop: 12 }}>
+            <button
+              className="btn btn-accent"
+              onClick={handleSplatGenerate}
+              disabled={!sceneFileId || isRendering || isSplatRendering}
+              style={{ width: "100%" }}
+            >
+              {isSplatRendering ? "Generating Dataset..." : "Generate Splat Dataset"}
+            </button>
+          </div>
+
+          {isSplatRendering && (
+            <div style={{ marginTop: 8 }}>
+              <div className="barber-pole-container"><div className="barber-pole" /></div>
+            </div>
+          )}
+
+          {splatResults && (
+            <div className="panel-actions" style={{ marginTop: 8 }}>
+              <button className="btn btn-export" onClick={handleSplatDownload}>
+                Download Splat Dataset (ZIP)
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* --- Splat Dialogs --- */}
+      {showSplatDialog === "warning" && (
+        <div className="dialog-overlay">
+          <div className="dialog">
+            <h2>No Lights Detected</h2>
+            <p style={{ fontSize: "0.9rem", lineHeight: 1.5 }}>
+              Your scene has no user-placed lights and override lighting is not enabled.
+              Gaussian Splat training data requires well-lit images — dark or unlit areas will produce poor quality splats.
+            </p>
+            <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              Either add scene lights or enable "Override lighting" before generating the dataset.
+            </p>
+            <div className="dialog-actions" style={{ gap: 8, flexWrap: "wrap" }}>
+              <button className="btn btn-primary" onClick={() => setShowSplatDialog(null)}>
+                Add Lights First
+              </button>
+              <button className="btn btn-accent" onClick={() => { setShowSplatDialog("confirm"); }}>
+                Proceed Anyway
+              </button>
+              <button className="btn" onClick={() => setShowSplatDialog(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSplatDialog === "confirm" && (
+        <div className="dialog-overlay">
+          <div className="dialog">
+            <h2>Generate Splat Dataset</h2>
+            <p style={{ fontSize: "0.9rem", lineHeight: 1.5 }}>
+              This will render <strong>{splatCount} views</strong> at <strong>{SPLAT_PRESETS[splatPreset].res}</strong> ({SPLAT_PRESETS[splatPreset].label} preset).
+              <br />Estimated time: <strong>{SPLAT_PRESETS[splatPreset].est}</strong>.
+            </p>
+            <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              <strong>Recommendation:</strong> Before rendering, preview the camera placements to verify coverage,
+              and do 1-2 test renders with "Render Views" to check lighting and materials.
+              Issues found after rendering {splatCount} frames waste significant time.
+            </p>
+            <div className="dialog-actions" style={{ gap: 8, flexWrap: "wrap" }}>
+              <button className="btn btn-primary" onClick={handleSplatPreviewCameras}>
+                Preview Cameras Only
+              </button>
+              {cameras.length > 0 && (
+                <button className="btn btn-accent" onClick={handleSplatRenderCurrent}>
+                  Render Current Cameras ({cameras.length})
+                </button>
+              )}
+              <button className="btn btn-accent" onClick={handleSplatStartRender}>
+                New Cameras + Render ({splatCount})
+              </button>
+              <button className="btn" onClick={() => setShowSplatDialog(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showDebugConsole && (

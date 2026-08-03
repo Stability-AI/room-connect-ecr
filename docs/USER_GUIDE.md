@@ -143,7 +143,7 @@ Add custom lights for rendering:
 | Generate depthmaps | Also render 32-bit EXR depth maps (fast: 1-sample Cycles) |
 | Override lighting | Replace scene lights with even studio illumination |
 | Brightness slider | Adjust override lighting intensity (0.5x–4.0x) |
-| Include .blend file | Add the Blender scene to the ZIP for inspection |
+| Include .blend file | Add the Blender scene to the ZIP, including all placed cameras and lights |
 | Export camera intrinsics/extrinsics | Download camera parameters as JSON |
 | Show debug console | Display real-time Blender render logs |
 
@@ -159,7 +159,80 @@ Add custom lights for rendering:
 The ZIP contains:
 - `render_CameraName_id.png` — Color render for each camera
 - `depth_CameraName_id.exr` — Depth map (if enabled)
-- `scene_id.blend` — Blender scene file (if enabled)
+- `scene_id.blend` — Blender scene file with all cameras and lights (if enabled)
+
+---
+
+## Gaussian Splatting Dataset Generation
+
+Generate a Nerfstudio-compatible training dataset for 3D Gaussian Splatting reconstruction.
+
+### Setup
+1. Load a GLB scene and ensure it has adequate lighting (add lights or enable "Override lighting")
+2. Scroll to **Gaussian Splat Dataset** section on the Rendering tab
+3. Set **Views** (80-400, default 200) and **Preset** (Fast/Balanced/Hero)
+4. Optionally check **Include depth maps** for depth-supervised training
+5. Optionally check **Render as HDR (OpenEXR)** for HDR-aware splat methods:
+   - Select bit depth: 16-bit half (recommended) or 32-bit float
+   - **Apply log(1+x) transform** is recommended -- compresses dynamic range for stable training (invertible via `exp(y) - 1`)
+   - Note: standard splatfacto expects PNG; HDR EXR is for HDR-aware methods only
+
+### Generating
+1. Click **Generate Splat Dataset**
+2. If no lights are present, a warning dialog appears — add lights or enable override lighting first
+3. Choose from:
+   - **Preview Cameras Only** — places cameras in the scene for visual inspection without rendering. You can then select, delete, or adjust individual cameras before committing.
+   - **Render Current Cameras** — renders whatever cameras are already in the camera pool at the selected quality preset
+   - **New Cameras + Render** — auto-places the specified number of cameras then immediately starts rendering
+
+### Camera Distribution
+Cameras are placed at 3 height layers optimized for 3DGS reconstruction:
+- **Low** (~15% of room height): captures floor details and object bases
+- **Mid** (~40%): standing eye-level, primary coverage
+- **High** (~75%): object tops, ceiling detail, downward angles
+
+Orientations are randomized (360° yaw, height-dependent pitch) for diverse angular coverage across all surfaces.
+
+### Analyzing Camera Distribution
+
+After placing cameras (via "Preview Cameras Only" or any other method), click **Analyze Distribution** to evaluate coverage quality:
+
+- **Quality Score (0-100)**: Combined metric weighting spatial uniformity (30%), ray hit rate (50%), and angular diversity (20%)
+- **Spatial CV**: Coefficient of variation of local density. < 0.3 = well distributed (green), 0.3-0.7 = moderate clustering (yellow), > 0.7 = significant gaps (red)
+- **Angular divergence**: Mean angle between neighboring cameras' view directions. Higher = more diverse. Splat mode typically achieves 60-90°
+- **Ray hits**: % of frustum rays that hit scene geometry (should be 80%+ for interiors)
+- **Multi-view**: % of observed faces seen by 3+ cameras (important for 3DGS reconstruction)
+
+Colored spheres appear at each camera position: green = well-positioned, yellow = slightly sparse, red = coverage gap, blue = clustered. A surface heatmap overlay shows which parts of the scene are well-observed (green) vs under-observed (red).
+
+### Quality Presets
+
+| Preset | Resolution | Samples | Est. time (CPU, 200 views) |
+|--------|-----------|---------|---------------------------|
+| Draft | 2560×1440 | 32 | ~20-40 min |
+| Fast | 1920×1080 | 256 | ~3-6 hours |
+| Balanced | 2560×1440 | 512 | ~8-16 hours |
+| Hero | 3840×2160 | 1024 | ~24-48 hours |
+
+### Output
+The downloaded ZIP contains:
+```
+splat_dataset/
+├── transforms.json     # Nerfstudio camera poses (OPENCV model) + intrinsics + aabb_scale
+├── images/
+│   ├── 0000.png        # or 0000.exr if HDR enabled
+│   ├── 0001.png
+│   └── ...
+└── depth/              # if depth maps enabled
+    └── ...
+```
+
+The `transforms.json` includes `camera_angle_x/y` (FOV in radians), `aabb_scale` (scene geometry extent), and per-frame 4x4 transform matrices.
+
+Use with Nerfstudio:
+```bash
+ns-train splatfacto --data ./splat_dataset
+```
 
 ---
 
