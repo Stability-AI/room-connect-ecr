@@ -1,4 +1,4 @@
-# Room Connect — User Guide
+# Scene Connect — User Guide
 
 ## Getting Started
 
@@ -49,7 +49,13 @@ Use the toolbar buttons to switch between:
 
 ---
 
-## Tab 1: Volume Connectivity
+## Tab 1: Scene
+
+Scene-level tools for export and analysis — see [Scene Export & Analysis](#scene-export--analysis) below for full details.
+
+---
+
+## Tab 2: Connectivity
 
 Define walkable areas and their connections.
 
@@ -75,28 +81,65 @@ Click **Export Graph (JSON)** to download the connectivity graph containing all 
 
 ---
 
-## Tab 2: Object Detection
+## Tab 3: Annotations
 
-Filter and detect objects in the scene by name, compute bounding boxes.
+Object detection, annotation, connections, and multi-view rendering.
 
 ### Detecting Objects
+
 1. Enter comma-separated filter terms (e.g. `chair, desk, furniture`)
-2. Choose **Include** (match) or **Exclude** (match everything else)
-3. Click **Detect Objects**
-4. Orange OOBB wireframes appear around matching meshes
+2. Choose **Exclude mode** to match everything except the terms
+3. Click **Detect** — orange OOBB wireframes appear around matching meshes
+4. Use **Cull** / **Merge** to clean up overlapping boxes
+5. Use **Show/Hide OOBBs** to toggle visibility
 
-You can run detection multiple times with different terms — each new detection appends to the existing list (duplicates are automatically filtered out). This allows you to build up a complete object set incrementally (e.g. detect "chair" first, then "desk", then "monitor").
+You can run detection multiple times with different terms — each new detection appends to the existing list (duplicates are automatically filtered out).
 
-### Managing Results
-- **Show/Hide OOBBs**: Toggle visibility
-- **Cull Selection**: Remove smaller boxes nested inside larger ones (adjustable sensitivity slider). Only affects the latest detection batch — previously committed objects are protected.
-- **Merge Selection**: Absorb smaller overlapping OOBBs into the larger enclosing one, expanding it to cover the union of both volumes. Uses the same sensitivity slider and batch protection as cull.
-- **Clear OOBBs**: Remove ALL detections and reset the list
-- **Export Objects (JSON)**: Download OOBB data for the full accumulated list (center, half-extents, rotation matrix, world position)
+### Manual Annotation
+
+1. **Double-click** any mesh in the 3D viewport to pick it
+2. The picked mesh highlights orange and its name appears in the panel
+3. Optionally type a new name in the **Rename** field
+4. Click **Add to Pool** (or "Add as [name]" if renamed)
+5. The object appears in the Object Pool with its OOBB
+
+### Object Pool
+
+Select an object in the pool to:
+- **Rename** it (updates scene graph, connections, and annotations)
+- **Add a description** (free text, included in exports)
+- **Connect to** another object with a relationship type
+- **Render Multi-View** for that object
+- **Remove** it (× button)
+
+### Creating Connections
+
+1. Select an object → click **Connect To...**
+2. Choose a relationship type from the dropdown:
+   - Adjacent to, On top of, Inside of, Part of, Supports, Supported by
+3. Click **Connect Here** on the target object
+4. Red connection lines appear in the 3D viewport
+5. Some relationships auto-create their inverse (e.g., "on top of" → "supported by")
+
+### Multi-View Object Rendering
+
+Renders each object in isolation from multiple viewpoints for 3D reconstruction:
+
+1. Configure: Views (4-32), Resolution (128-2048), Samples, optional depth maps
+2. **Background color**: click the color swatch to choose (default white)
+3. **Transparent background**: check to render RGBA PNGs with alpha transparency
+4. Click **Render Multi-View** on a single object, or **Render All Objects** for batch
+5. Download ZIP with per-object renders + metadata
+
+Multi-view renders use a controlled studio environment (single shadowless sun, no scene lights, no backdrop) independent of the Rendering tab settings.
+
+### Export
+
+Click **Export Annotations (JSON)** to download all objects with descriptions, OOBBs, and connections.
 
 ---
 
-## Tab 3: Rendering
+## Tab 4: Rendering
 
 Place cameras and render high-quality views via Blender Cycles.
 
@@ -146,8 +189,32 @@ Add custom lights for rendering:
 | Include .blend file | Add the Blender scene to the ZIP, including all placed cameras and lights |
 | Export camera intrinsics/extrinsics | Download camera parameters as JSON |
 | Show debug console | Display real-time Blender render logs |
+| Color management | **Standard** (accurate colors, default) or **Filmic** (compressed highlights — recommended with HDR backdrops and glass) |
 
 > **Tip**: All slider values throughout the app support **double-click to edit** — type an exact number instead of dragging.
+
+### Backdrop Image (World Environment)
+
+Upload an equirectangular panorama to use as the scene's sky and optionally for image-based lighting (IBL):
+
+1. Scroll to **Backdrop Image** in the Rendering tab
+2. Drop or browse for a PNG, EXR, or HDR file
+3. The image appears as a skybox in the 3D viewport preview
+4. Configure:
+   - **Show in viewport preview** — toggle the Three.js skybox
+   - **Use for lighting (IBL)** — the image contributes to scene lighting via environment map
+   - **Strength** — controls the Blender Background node intensity (affects render brightness)
+   - **Exposure** — controls the viewport preview tone mapping exposure
+5. To remove, click the **×** button — reverts to the default dark background
+
+**Format notes:**
+- **PNG**: Standard 8-bit, suitable for stylized backgrounds
+- **EXR**: 16/32-bit HDR, provides realistic lighting and high dynamic range
+- **HDR**: Radiance RGBE format, widely used for IBL panoramas
+
+**Color management tip:** If the HDR sky appears blown out through glass/windows, switch color management to **Filmic** — it compresses highlights so bright areas remain visible instead of clipping to white.
+
+The backdrop affects all render modes (Render Views, Splat Dataset, Flythrough) but does **not** affect Multiview Object Rendering, which uses its own isolated studio environment.
 
 ### Rendering
 1. Click **Render Views (N)** where N is the number of placed cameras
@@ -233,6 +300,125 @@ Use with Nerfstudio:
 ```bash
 ns-train splatfacto --data ./splat_dataset
 ```
+
+---
+
+## Camera Flythrough Rendering
+
+Create animated camera paths through your scene with smooth interpolation between placed cameras.
+
+### Setup
+
+1. Place at least 2 cameras in the scene (manually or via auto-placement)
+2. Scroll to the **Flythrough** section in the Rendering tab
+
+### Configuration
+
+| Setting | Default | Range | Notes |
+|---------|---------|-------|-------|
+| Frames | 300 | 30-3000 | Total frames in the animation |
+| FPS | 30 | 10-120 | Playback framerate |
+| Format | PNG | PNG/EXR | EXR for HDR workflows |
+| Depth maps | Off | On/Off | Separate depth renders per frame |
+
+The calculated duration is shown automatically (frames ÷ FPS).
+
+### How It Works
+
+The camera follows a smooth path through all placed cameras in order:
+- **Position**: linear interpolation (lerp) between consecutive waypoints
+- **Rotation**: spherical linear interpolation (slerp) for smooth orientation transitions
+- Frames are distributed evenly across all segments
+
+### Render Quality
+
+Flythrough uses animation-optimized Cycles settings:
+- Compositor-based denoise (using Normal + Albedo passes for temporal stability)
+- Path guiding with deterministic guiding for consistent indirect lighting
+- Fixed random seed per frame to reduce flicker
+- Deep light bounces (12 max, 8 glossy, 4 diffuse, 8 transmission)
+- Tight adaptive sampling (0.005 noise threshold)
+
+### Output
+
+The flythrough is packaged as a ZIP containing:
+- `frames/frame_0001.png` (or `.exr`) — rendered frames
+- `frames/depth_0001.png` — depth maps (if enabled)
+- `camera_data.json` — per-frame camera metadata with K matrix, intrinsics, and extrinsics
+
+---
+
+## Scene Export & Analysis
+
+Scene-level tools for export and analysis.
+
+### Export Complete Blender Scene
+
+Exports the loaded GLB as a `.blend` file with all Scene Connect state included:
+
+1. Select what to include via checkboxes:
+   - **Cameras**: All placed cameras as Blender Camera objects
+   - **User lights**: All placed lights as Blender Light objects
+   - **Override lighting**: Studio lighting setup (if enabled)
+   - **Render settings**: Resolution, samples
+2. Click **Export Complete Blender Scene**
+3. Download the ZIP containing the `.blend` file
+
+The `.blend` can be opened in Blender with all cameras and lights in place, ready for further editing or rendering.
+
+### Scene Analysis
+
+Analyzes the loaded GLB for mesh quality, materials, and geometry:
+
+1. Click **Analyze Scene** (may take 10-30 seconds for large scenes)
+2. Results show:
+   - Object counts (meshes, lights)
+   - Total vertices and faces
+   - Material analysis: how many use Principled BSDF, which PBR texture types are connected (albedo, roughness, metallic, normal, emission, etc.)
+   - UV map presence
+   - Watertight mesh count
+   - Meshes with intersecting faces
+   - Scene bounding box dimensions
+3. Click **Download Full Report (JSON)** for the complete per-mesh breakdown
+
+Enable **Show console** at the bottom to see operation progress.
+
+### Point Cloud Generation
+
+Generate a curvature-weighted point cloud for 3D Gaussian Splatting initialization. Edges and geometric detail get dense coverage; flat surfaces (walls, floors) stay covered enough to avoid holes.
+
+#### Quick Start
+1. Select a **Preset**: Fast (250k), Standard (750k), or Dense (1.5M)
+2. Click **Generate Point Cloud**
+3. Download the ZIP containing the PLY file
+
+#### Advanced Settings
+
+Expand "Advanced Settings" to configure:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| Target Points | 750,000 | Total point budget distributed by curvature-weighted area |
+| Min Density Ratio | 0.12 | Floor density for flat faces (12% of max-curvature density) |
+| Curvature Gamma | 0.5 | Power curve on curvature. <1 = spreads low-curvature range (recommended) |
+| Percentile Clip | 0.95 | Clips sharpest 5% of edges before normalization |
+| Seed | 42 | Random seed for reproducibility. Check "Random" for non-deterministic |
+| Sample Colors | On | Bake scene material colours (sRGB) per point |
+| Sample Normals | On | Include interpolated vertex normals |
+| Coordinate System | COLMAP | COLMAP (Y-down, for Nerfstudio) or Blender (Z-up) |
+
+#### Output
+
+The PLY file contains per-point: position (x,y,z), optional normals (nx,ny,nz), RGB colour (scene or curvature greyscale), and a `curvature` float property.
+
+#### Point Cloud Statistics
+
+After generating a point cloud, click **Generate Point Cloud Stats** to verify the curvature–density correlation:
+
+- **Pearson r**: Correlation between curvature and local point density (>0.3 = good, >0.5 = strong)
+- **Linear fit**: Slope and intercept of the curvature → density regression
+- **Quartile table**: Mean density for each curvature quartile, showing density increases with curvature
+- Download the full stats as JSON
 
 ---
 

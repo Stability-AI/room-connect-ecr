@@ -35,6 +35,7 @@ class CyclesRenderer:
         self.render_id = str(uuid.uuid4())[:8]
         self.log_buffer = []
         self.log_queue = log_queue
+        self._has_backdrop = False
 
     def _capture_log(self, msg):
         """Capture a log message and stream it via SSE if queue is available."""
@@ -387,6 +388,49 @@ class CyclesRenderer:
 
         self._capture_log(f"Persisted {len(cameras)} cameras to .blend (active: {cameras[0].get('name', 'Camera_0') if cameras else 'none'})")
 
+    def setup_world_backdrop(self, image_path: str, strength: float = 1.0, use_for_lighting: bool = True):
+        """Configure the World material to use an environment texture as backdrop."""
+        world = bpy.data.worlds.get("World")
+        if not world:
+            world = bpy.data.worlds.new("World")
+        bpy.context.scene.world = world
+        world.use_nodes = True
+        tree = world.node_tree
+        tree.nodes.clear()
+
+        env_tex = tree.nodes.new(type="ShaderNodeTexEnvironment")
+        env_tex.image = bpy.data.images.load(image_path)
+        env_tex.interpolation = "Linear"
+
+        tex_coord = tree.nodes.new(type="ShaderNodeTexCoord")
+        mapping = tree.nodes.new(type="ShaderNodeMapping")
+        tree.links.new(tex_coord.outputs["Generated"], mapping.inputs["Vector"])
+        tree.links.new(mapping.outputs["Vector"], env_tex.inputs["Vector"])
+
+        bg = tree.nodes.new(type="ShaderNodeBackground")
+        bg.inputs["Strength"].default_value = strength
+        tree.links.new(env_tex.outputs["Color"], bg.inputs["Color"])
+
+        output = tree.nodes.new(type="ShaderNodeOutputWorld")
+
+        if use_for_lighting:
+            tree.links.new(bg.outputs["Background"], output.inputs["Surface"])
+        else:
+            light_path = tree.nodes.new(type="ShaderNodeLightPath")
+            mix = tree.nodes.new(type="ShaderNodeMixShader")
+
+            bg_dark = tree.nodes.new(type="ShaderNodeBackground")
+            bg_dark.inputs["Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+            bg_dark.inputs["Strength"].default_value = 0.0
+
+            tree.links.new(light_path.outputs["Is Camera Ray"], mix.inputs["Fac"])
+            tree.links.new(bg_dark.outputs["Background"], mix.inputs[1])
+            tree.links.new(bg.outputs["Background"], mix.inputs[2])
+            tree.links.new(mix.outputs["Shader"], output.inputs["Surface"])
+
+        self._has_backdrop = True
+        self._capture_log(f"World backdrop set: {os.path.basename(image_path)} (strength={strength}, IBL={'on' if use_for_lighting else 'off'})")
+
     def _ensure_lighting(self, override_lighting: bool = False, brightness: float = 1.5):
         """Add or override lighting in the scene."""
         has_lights = any(obj.type == "LIGHT" for obj in bpy.data.objects)
@@ -420,20 +464,22 @@ class CyclesRenderer:
             max_dim = max(size.x, size.y, size.z)
             scale_factor = max_dim / 10.0
 
-            # Very bright world environment for even base illumination
-            world = bpy.data.worlds.get("World")
-            if not world:
-                world = bpy.data.worlds.new("World")
-            bpy.context.scene.world = world
-            world.use_nodes = True
-            tree = world.node_tree
-            tree.nodes.clear()
+            # World environment: skip if a backdrop image was configured
+            # (setup_world_backdrop already set up the Environment Texture nodes)
+            if not self._has_backdrop:
+                world = bpy.data.worlds.get("World")
+                if not world:
+                    world = bpy.data.worlds.new("World")
+                bpy.context.scene.world = world
+                world.use_nodes = True
+                tree = world.node_tree
+                tree.nodes.clear()
 
-            bg = tree.nodes.new(type="ShaderNodeBackground")
-            bg.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
-            bg.inputs["Strength"].default_value = 15.0 * brightness
-            output = tree.nodes.new(type="ShaderNodeOutputWorld")
-            tree.links.new(bg.outputs["Background"], output.inputs["Surface"])
+                bg = tree.nodes.new(type="ShaderNodeBackground")
+                bg.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+                bg.inputs["Strength"].default_value = 15.0 * brightness
+                output = tree.nodes.new(type="ShaderNodeOutputWorld")
+                tree.links.new(bg.outputs["Background"], output.inputs["Surface"])
 
             # 6 large area lights from all directions for shadowless even illumination
             light_configs = [
@@ -497,7 +543,7 @@ class CyclesRenderer:
         self._capture_log("No GPU devices found, using CPU")
         bpy.context.scene.cycles.device = "CPU"
 
-    def configure_render_settings(self):
+    def configure_render_settings(self, color_management="standard"):
         """Configure Cycles render settings for the color pass."""
         scene = bpy.context.scene
         scene.render.engine = "CYCLES"
@@ -527,12 +573,19 @@ class CyclesRenderer:
         scene.render.image_settings.color_depth = "8"
         scene.render.image_settings.color_mode = "RGBA"
 
+        view_transform = "Filmic" if color_management == "filmic" else "Standard"
+        scene.view_settings.view_transform = view_transform
+        scene.view_settings.look = "None"
+        scene.view_settings.exposure = 0.0
+        scene.view_settings.gamma = 1.0
+
         scene.use_nodes = False
         scene.render.threads_mode = "AUTO"
 
         self._capture_log(
             f"Render settings: {self.render_resolution_x}x{self.render_resolution_y}, "
-            f"{self.rendering_samples} samples, device={scene.cycles.device}"
+            f"{self.rendering_samples} samples, device={scene.cycles.device}, "
+            f"color={view_transform}"
         )
 
     def configure_depthmap_settings(self):
@@ -589,7 +642,7 @@ class CyclesRenderer:
 
         self._capture_log("Depth map settings configured (1 sample, 32-bit EXR, normalized + inverted)")
 
-    def render_single_view(self, generate_depthmap: bool = False, override_lighting: bool = False, lighting_brightness: float = 1.5, include_blend: bool = False) -> dict:
+    def render_single_view(self, generate_depthmap: bool = False, override_lighting: bool = False, lighting_brightness: float = 1.5, include_blend: bool = False, color_management: str = "standard") -> dict:
         """
         Render a single view using the scene's default camera.
 
@@ -606,7 +659,7 @@ class CyclesRenderer:
         results = {"files": [], "logs": []}
 
         # Render color pass
-        self.configure_render_settings()
+        self.configure_render_settings(color_management=color_management)
         color_path = str(self.output_dir / f"render_{self.render_id}.png")
         bpy.context.scene.render.filepath = color_path
 
@@ -636,7 +689,7 @@ class CyclesRenderer:
         results["logs"] = self.log_buffer
         return results
 
-    def render_all_views(self, cameras: list, generate_depthmap: bool = False, override_lighting: bool = False, lighting_brightness: float = 1.5, include_blend: bool = False, lights: list = None) -> dict:
+    def render_all_views(self, cameras: list, generate_depthmap: bool = False, override_lighting: bool = False, lighting_brightness: float = 1.5, include_blend: bool = False, lights: list = None, color_management: str = "standard") -> dict:
         """
         Render from multiple camera positions.
         Each camera dict has: id, name, position, quaternion, fov.
@@ -684,7 +737,7 @@ class CyclesRenderer:
             bpy.context.scene.camera = cam_obj
 
             # Render color pass
-            self.configure_render_settings()
+            self.configure_render_settings(color_management=color_management)
             color_filename = f"render_{cam_name}_{self.render_id}.png"
             color_path = str(self.output_dir / color_filename)
             bpy.context.scene.render.filepath = color_path
@@ -728,7 +781,7 @@ class CyclesRenderer:
         "hero":     {"resolution": (3840, 2160), "samples": 1024, "max_bounces": 12, "diffuse_bounces": 8, "glossy_bounces": 6},
     }
 
-    def configure_splat_settings(self, preset="balanced", resolution_x=None, resolution_y=None, samples=None, hdr_format=None):
+    def configure_splat_settings(self, preset="balanced", resolution_x=None, resolution_y=None, samples=None, hdr_format=None, color_management="standard"):
         """Configure Cycles for high-fidelity splat training data.
 
         hdr_format: None for PNG, "exr16" for 16-bit half EXR, "exr32" for 32-bit float EXR.
@@ -792,7 +845,7 @@ class CyclesRenderer:
             scene.render.image_settings.file_format = "PNG"
             scene.render.image_settings.color_mode = "RGB"
             scene.render.image_settings.color_depth = "8"
-            scene.view_settings.view_transform = "Standard"
+            scene.view_settings.view_transform = "Filmic" if color_management == "filmic" else "Standard"
 
         scene.view_settings.look = "None"
         scene.view_settings.exposure = 0.0
@@ -910,7 +963,8 @@ class CyclesRenderer:
     def render_splat_dataset(self, cameras, preset="balanced", resolution_x=None,
                              resolution_y=None, samples=None, generate_depth=False,
                              override_lighting=False, lighting_brightness=1.5,
-                             lights=None, hdr_format=None, log_transform=False):
+                             lights=None, hdr_format=None, log_transform=False,
+                             color_management="standard"):
         """Render all cameras at high fidelity and export Nerfstudio dataset.
 
         hdr_format: None for PNG, "exr16" for 16-bit half EXR, "exr32" for 32-bit float EXR.
@@ -920,7 +974,7 @@ class CyclesRenderer:
         from mathutils import Quaternion as MQuaternion, Vector, Matrix
 
         self.log_buffer = []
-        rx, ry = self.configure_splat_settings(preset, resolution_x, resolution_y, samples, hdr_format=hdr_format)
+        rx, ry = self.configure_splat_settings(preset, resolution_x, resolution_y, samples, hdr_format=hdr_format, color_management=color_management)
         frame_ext = ".exr" if hdr_format else ".png"
 
         self._ensure_lighting(override_lighting=override_lighting, brightness=lighting_brightness)
@@ -983,7 +1037,7 @@ class CyclesRenderer:
                 bpy.context.scene.render.filepath = depth_path
                 bpy.ops.render.render(write_still=True)
                 results["files"].append({"type": "depth", "path": depth_path, "filename": f"depth/{depth_filename}"})
-                self.configure_splat_settings(preset, resolution_x, resolution_y, samples, hdr_format=hdr_format)
+                self.configure_splat_settings(preset, resolution_x, resolution_y, samples, hdr_format=hdr_format, color_management=color_management)
 
             bpy.data.objects.remove(cam_obj, do_unlink=True)
             self._capture_log(f"  Frame {idx + 1}/{total} complete")
@@ -1000,6 +1054,440 @@ class CyclesRenderer:
         results["files"].append({"type": "transforms", "path": transforms_path, "filename": "transforms.json"})
 
         self._capture_log(f"Splat dataset complete: {total} frames + transforms.json")
+        results["logs"] = self.log_buffer
+        return results
+
+    # =========================================================================
+    # MULTI-VIEW OBJECT RENDERING
+    # =========================================================================
+
+    def render_object_multiview(self, objects, num_views=16, resolution=512,
+                                 samples=32, generate_depth=False,
+                                 bg_color=None, transparent_bg=False):
+        """Render each object in isolation from Fibonacci-sphere viewpoints."""
+        import math
+        from mathutils import Vector, Euler
+
+        if bg_color is None:
+            bg_color = [1.0, 1.0, 1.0]
+
+        self.log_buffer = []
+        results = {"files": [], "logs": []}
+
+        base_dir = self.output_dir / f"objects_{self.render_id}"
+        base_dir.mkdir(parents=True, exist_ok=True)
+
+        scene = bpy.context.scene
+        scene.render.engine = "CYCLES"
+        self._enable_gpu()
+        scene.render.resolution_x = resolution
+        scene.render.resolution_y = resolution
+        scene.cycles.samples = samples
+        scene.cycles.use_denoising = True
+        scene.render.image_settings.file_format = "PNG"
+        scene.render.image_settings.color_mode = "RGBA" if transparent_bg else "RGB"
+        scene.render.image_settings.color_depth = "8"
+        scene.render.film_transparent = transparent_bg
+        scene.use_nodes = False
+        scene.render.use_compositing = False
+
+        scene.view_settings.view_transform = "Standard"
+        scene.view_settings.look = "None"
+
+        # Controlled object render environment: background color visible to
+        # camera rays only, neutral white for lighting rays (no color bleed).
+        # All existing scene lights removed; single shadowless sun added.
+        scene.render.film_transparent = transparent_bg
+        if bpy.data.worlds:
+            world = bpy.data.worlds[0]
+        else:
+            world = bpy.data.worlds.new("World")
+        scene.world = world
+        world.use_nodes = True
+        tree = world.node_tree
+        tree.nodes.clear()
+
+        light_path = tree.nodes.new(type="ShaderNodeLightPath")
+        bg_camera = tree.nodes.new(type="ShaderNodeBackground")
+        bg_camera.inputs[0].default_value = (bg_color[0], bg_color[1], bg_color[2], 1.0)
+        bg_camera.inputs[1].default_value = 1.0
+
+        bg_lighting = tree.nodes.new(type="ShaderNodeBackground")
+        bg_lighting.inputs[0].default_value = (1.0, 1.0, 1.0, 1.0)
+        bg_lighting.inputs[1].default_value = 1.0
+
+        mix = tree.nodes.new(type="ShaderNodeMixShader")
+        tree.links.new(light_path.outputs["Is Camera Ray"], mix.inputs["Fac"])
+        tree.links.new(bg_lighting.outputs["Background"], mix.inputs[1])
+        tree.links.new(bg_camera.outputs["Background"], mix.inputs[2])
+
+        output_node = tree.nodes.new(type="ShaderNodeOutputWorld")
+        tree.links.new(mix.outputs["Shader"], output_node.inputs["Surface"])
+
+        for obj in list(bpy.data.objects):
+            if obj.type == "LIGHT":
+                bpy.data.objects.remove(obj, do_unlink=True)
+
+        light_data = bpy.data.lights.new(name="ObjectRenderSun", type="SUN")
+        light_data.energy = 3.0
+        light_data.use_shadow = False
+        light_data.angle = math.radians(11.4)
+        light_obj = bpy.data.objects.new("ObjectRenderSun", light_data)
+        bpy.context.collection.objects.link(light_obj)
+        light_obj.rotation_euler = (math.radians(-250), math.radians(-150), math.radians(-250))
+
+        golden_angle = math.pi * (3.0 - math.sqrt(5.0))
+        radius_scale = 2.0
+        pitch_range = (-1.55, 1.55)
+        object_fov_deg = 40.0
+
+        all_mesh_objs = [o for o in bpy.data.objects if o.type == "MESH"]
+
+        for obj_idx, obj_data in enumerate(objects):
+            obj_name = obj_data.get("name", f"Object_{obj_idx}")
+            safe_name = obj_name.replace("/", "_").replace("\\", "_").replace(" ", "_")
+            self._capture_log(f"Rendering object {obj_idx + 1}/{len(objects)}: {obj_name}")
+
+            target_obj = None
+            for mesh_obj in all_mesh_objs:
+                if mesh_obj.name == obj_name or obj_name in mesh_obj.name:
+                    target_obj = mesh_obj
+                    break
+
+            if not target_obj:
+                self._capture_log(f"  Object not found: {obj_name}, skipping")
+                continue
+
+            # Hide all except target
+            for o in all_mesh_objs:
+                o.hide_render = (o != target_obj)
+                o.hide_viewport = (o != target_obj)
+
+            # Compute object bounds
+            world_matrix = target_obj.matrix_world
+            bbox_world = [world_matrix @ Vector(corner) for corner in target_obj.bound_box]
+            obj_min = Vector((min(v.x for v in bbox_world), min(v.y for v in bbox_world), min(v.z for v in bbox_world)))
+            obj_max = Vector((max(v.x for v in bbox_world), max(v.y for v in bbox_world), max(v.z for v in bbox_world)))
+            obj_center = (obj_min + obj_max) / 2.0
+            obj_dims = obj_max - obj_min
+            camera_radius = max(obj_dims) * radius_scale
+
+            obj_dir = base_dir / safe_name
+            rgb_dir = obj_dir / "rgb"
+            rgb_dir.mkdir(parents=True, exist_ok=True)
+
+            bpy.ops.object.camera_add()
+            cam_obj = bpy.context.object
+            cam_obj.data.angle = (object_fov_deg * math.pi) / 180.0
+            cam_obj.data.clip_start = 0.1
+            cam_obj.data.clip_end = 10000
+            scene.camera = cam_obj
+
+            view_meta = {"object_name": obj_name, "description": obj_data.get("description", ""), "num_views": num_views, "views": []}
+
+            # Reference view
+            ref_euler = Euler((math.radians(63), math.radians(0), math.radians(45)), 'XYZ')
+            ref_dir = Vector((0, 0, -1))
+            ref_dir.rotate(ref_euler)
+            cam_obj.location = obj_center - ref_dir * camera_radius
+            direction = obj_center - cam_obj.location
+            cam_obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+
+            ref_path = str(rgb_dir / f"{safe_name}_ref.png")
+            scene.render.filepath = ref_path
+            bpy.ops.render.render(write_still=True)
+            results["files"].append({"type": "color", "path": ref_path, "filename": f"{safe_name}/rgb/{safe_name}_ref.png"})
+
+            # Fibonacci sphere views
+            for view_idx in range(num_views):
+                z = 1.0 - (2.0 * view_idx + 1.0) / num_views
+                pitch = max(pitch_range[0], min(pitch_range[1], math.asin(z)))
+                yaw = (view_idx * golden_angle) % (2.0 * math.pi)
+                cos_pitch = math.cos(pitch)
+                cam_pos = Vector((
+                    obj_center.x + camera_radius * math.sin(yaw) * cos_pitch,
+                    obj_center.y + camera_radius * math.cos(yaw) * cos_pitch,
+                    obj_center.z + camera_radius * math.sin(pitch),
+                ))
+                cam_obj.location = cam_pos
+                direction = obj_center - cam_pos
+                cam_obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+
+                view_path = str(rgb_dir / f"{safe_name}_view_{view_idx:02d}.png")
+                scene.render.filepath = view_path
+                bpy.ops.render.render(write_still=True)
+                results["files"].append({"type": "color", "path": view_path, "filename": f"{safe_name}/rgb/{safe_name}_view_{view_idx:02d}.png"})
+
+                m = cam_obj.matrix_world
+                view_meta["views"].append({
+                    "view_index": view_idx,
+                    "file": f"{safe_name}_view_{view_idx:02d}.png",
+                    "transform_matrix": [[m[r][c] for c in range(4)] for r in range(4)],
+                })
+
+            bpy.data.objects.remove(cam_obj, do_unlink=True)
+
+            # Save per-object metadata
+            meta_path = str(obj_dir / f"{safe_name}_meta.json")
+            with open(meta_path, "w") as f:
+                json.dump({**view_meta, "oobb": obj_data.get("oobb", {}), "worldPosition": obj_data.get("worldPosition", [])}, f, indent=2)
+            results["files"].append({"type": "metadata", "path": meta_path, "filename": f"{safe_name}/{safe_name}_meta.json"})
+
+            self._capture_log(f"  Completed {num_views} views for {obj_name}")
+
+        # Unhide all
+        for o in all_mesh_objs:
+            o.hide_render = False
+            o.hide_viewport = False
+
+        self._capture_log(f"Object multiview complete: {len(objects)} objects")
+        results["logs"] = self.log_buffer
+        return results
+
+    # =========================================================================
+    # FLYTHROUGH RENDERING
+    # =========================================================================
+
+    def render_flythrough(self, cameras, total_frames=300, fps=30,
+                          output_format="png", generate_depth=False,
+                          override_lighting=False, lighting_brightness=1.5,
+                          lights=None, color_management="standard"):
+        """Render interpolated flythrough between camera waypoints."""
+        import math
+        from mathutils import Quaternion as MQuaternion, Vector
+
+        self.log_buffer = []
+        self._capture_log(f"Starting flythrough: {total_frames} frames, {fps} fps, {len(cameras)} waypoints")
+
+        self._ensure_lighting(override_lighting=override_lighting, brightness=lighting_brightness)
+        if lights:
+            self._add_user_lights(lights)
+
+        scene = bpy.context.scene
+        scene.render.engine = "CYCLES"
+        self._enable_gpu()
+        scene.render.resolution_x = self.render_resolution_x
+        scene.render.resolution_y = self.render_resolution_y
+        scene.render.resolution_percentage = 100
+        scene.cycles.samples = self.rendering_samples
+
+        # Animation-optimized render setup:
+        # Denoising disabled -- compositor denoise is more temporally stable
+        # but requires separate pass setup. For now, rely on high samples + fixed seed.
+        scene.cycles.use_denoising = False
+
+        # Persistent data: cache BVH, textures between frames
+        scene.render.use_persistent_data = True
+
+        # Path guiding: learns light distribution, reduces variance/flicker
+        scene.cycles.use_guiding = True
+        scene.cycles.use_deterministic_guiding = True
+        scene.cycles.guiding_training_samples = 128
+
+        # Adaptive sampling: tight threshold for dark area convergence
+        scene.cycles.use_adaptive_sampling = True
+        scene.cycles.adaptive_threshold = 0.005
+        scene.cycles.adaptive_min_samples = 64
+
+        # Clamp indirect to suppress fireflies; direct unclamped
+        scene.cycles.sample_clamp_indirect = 10.0
+        scene.cycles.sample_clamp_direct = 0.0
+
+        # Fixed seed: every frame gets the same noise pattern,
+        # eliminating temporal flicker entirely
+        scene.cycles.seed = 0
+        scene.cycles.use_animated_seed = False
+
+        # Dynamic BVH for lower peak memory
+        scene.cycles.debug_bvh_type = "DYNAMIC_BVH"
+        scene.cycles.debug_use_compact_bvh = True
+
+        # Deep bounces for interiors
+        scene.cycles.max_bounces = 12
+        scene.cycles.glossy_bounces = 8
+        scene.cycles.diffuse_bounces = 4
+        scene.cycles.transmission_bounces = 8
+        scene.cycles.caustics_reflective = False
+        scene.cycles.caustics_refractive = False
+        scene.cycles.transparent_max_bounces = 128
+
+        # Light tree for improved light sampling
+        try:
+            scene.cycles.use_light_tree = True
+        except Exception:
+            pass
+
+        # Enable denoising data passes for compositor denoise
+        for vl in scene.view_layers:
+            vl.cycles.denoising_store_passes = True
+
+        # Compositor denoise: more temporally stable than render-time denoise.
+        # Uses auxiliary passes (Normal, Albedo) to anchor the result.
+        scene.use_nodes = True
+        scene.render.use_compositing = True
+        tree = scene.node_tree
+        if tree is None:
+            scene.use_nodes = True
+            tree = scene.node_tree
+        tree.nodes.clear()
+        tree.links.clear()
+
+        rl_node = tree.nodes.new(type="CompositorNodeRLayers")
+        rl_node.location = (0, 0)
+        denoise_node = tree.nodes.new(type="CompositorNodeDenoise")
+        denoise_node.location = (300, 0)
+        composite_node = tree.nodes.new(type="CompositorNodeComposite")
+        composite_node.location = (600, 0)
+
+        tree.links.new(rl_node.outputs["Image"], denoise_node.inputs["Image"])
+        tree.links.new(rl_node.outputs["Denoising Normal"], denoise_node.inputs["Normal"])
+        tree.links.new(rl_node.outputs["Denoising Albedo"], denoise_node.inputs["Albedo"])
+        tree.links.new(denoise_node.outputs["Image"], composite_node.inputs["Image"])
+
+        self._capture_log("Compositor denoise pipeline configured (Normal + Albedo passes)")
+
+        is_exr = output_format == "exr"
+        if is_exr:
+            scene.render.image_settings.file_format = "OPEN_EXR"
+            scene.render.image_settings.color_depth = "16"
+            scene.render.image_settings.exr_codec = "ZIP"
+            scene.render.image_settings.color_mode = "RGB"
+            scene.view_settings.view_transform = "Raw"
+        else:
+            scene.render.image_settings.file_format = "PNG"
+            scene.render.image_settings.color_mode = "RGB"
+            scene.render.image_settings.color_depth = "8"
+            scene.view_settings.view_transform = "Filmic" if color_management == "filmic" else "Standard"
+
+        scene.view_settings.look = "None"
+        scene.view_settings.exposure = 0.0
+        scene.view_settings.gamma = 1.0
+
+        ext = ".exr" if is_exr else ".png"
+        yup_to_zup = MQuaternion((math.cos(math.pi / 4), math.sin(math.pi / 4), 0, 0))
+
+        # Convert camera waypoints to Blender coords
+        waypoints = []
+        for cam_data in cameras:
+            pos = cam_data["position"]
+            blender_pos = Vector((pos[0], -pos[2], pos[1]))
+            q = cam_data["quaternion"]
+            threejs_quat = MQuaternion((q[3], q[0], q[1], q[2]))
+            blender_quat = yup_to_zup @ threejs_quat
+            waypoints.append({"pos": blender_pos, "quat": blender_quat, "fov": cam_data.get("fov", 60)})
+
+        if len(waypoints) < 2:
+            self._capture_log("Need at least 2 cameras for flythrough")
+            return {"files": [], "logs": self.log_buffer}
+
+        results = {"files": [], "logs": []}
+        base_dir = self.output_dir / f"flythrough_{self.render_id}"
+        frames_dir = base_dir / "frames"
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        if generate_depth:
+            depth_dir = base_dir / "depth"
+            depth_dir.mkdir(parents=True, exist_ok=True)
+
+        bpy.ops.object.camera_add()
+        cam_obj = bpy.context.object
+        cam_obj.name = "FlythroughCam"
+        cam_obj.data.clip_start = 0.1
+        cam_obj.data.clip_end = 10000
+        cam_obj.rotation_mode = "QUATERNION"
+        scene.camera = cam_obj
+
+        frame_metadata = {}
+        num_waypoints = len(waypoints)
+
+        for frame in range(total_frames):
+            t = frame / max(total_frames - 1, 1)
+            segment = t * (num_waypoints - 1)
+            i = min(int(segment), num_waypoints - 2)
+            frac = segment - i
+
+            # Lerp position
+            pos = waypoints[i]["pos"].lerp(waypoints[i + 1]["pos"], frac)
+            # Slerp rotation
+            quat = waypoints[i]["quat"].slerp(waypoints[i + 1]["quat"], frac)
+            # Lerp FOV
+            fov = waypoints[i]["fov"] * (1 - frac) + waypoints[i + 1]["fov"] * frac
+
+            cam_obj.location = pos
+            cam_obj.rotation_quaternion = quat
+            cam_obj.data.angle = (fov * math.pi) / 180.0
+
+            frame_num = frame + 1
+            frame_path = str(frames_dir / f"frame_{frame_num:04d}{ext}")
+            scene.render.filepath = frame_path
+            bpy.ops.render.render(write_still=True)
+            results["files"].append({"type": "color", "path": frame_path, "filename": f"frames/frame_{frame_num:04d}{ext}"})
+
+            if generate_depth:
+                self.configure_depthmap_settings()
+                depth_path = str(depth_dir / f"frame_{frame_num:04d}.exr")
+                scene.render.filepath = depth_path
+                bpy.ops.render.render(write_still=True)
+                results["files"].append({"type": "depth", "path": depth_path, "filename": f"depth/frame_{frame_num:04d}.exr"})
+                # Restore color + compositor denoise settings
+                if is_exr:
+                    scene.render.image_settings.file_format = "OPEN_EXR"
+                    scene.render.image_settings.color_depth = "16"
+                    scene.render.image_settings.exr_codec = "ZIP"
+                    scene.view_settings.view_transform = "Raw"
+                else:
+                    scene.render.image_settings.file_format = "PNG"
+                    scene.render.image_settings.color_depth = "8"
+                    scene.view_settings.view_transform = "Standard"
+                scene.cycles.samples = self.rendering_samples
+                scene.use_nodes = True
+                scene.render.use_compositing = True
+
+            # Camera metadata
+            m = cam_obj.matrix_world
+            wq = cam_obj.matrix_world.to_quaternion()
+            cam_data_obj = cam_obj.data
+            sensor_w = cam_data_obj.sensor_width
+            focal_mm = cam_data_obj.lens
+            fx = (self.render_resolution_x * focal_mm) / sensor_w
+            fy = fx
+
+            frame_metadata[str(frame_num)] = {
+                "frame_number": frame_num,
+                "file_path": f"frames/frame_{frame_num:04d}{ext}",
+                "intrinsics": {
+                    "K": [[fx, 0, self.render_resolution_x / 2], [0, fy, self.render_resolution_y / 2], [0, 0, 1]],
+                    "fov_degrees": fov,
+                    "focal_length_px": {"fx": fx, "fy": fy},
+                    "principal_point": {"cx": self.render_resolution_x / 2, "cy": self.render_resolution_y / 2},
+                },
+                "extrinsics": {
+                    "position": [float(pos.x), float(pos.y), float(pos.z)],
+                    "quaternion_xyzw": [float(wq.x), float(wq.y), float(wq.z), float(wq.w)],
+                    "world_matrix": [[m[r][c] for c in range(4)] for r in range(4)],
+                },
+            }
+
+            if frame_num % 25 == 0 or frame_num == total_frames:
+                self._capture_log(f"  Frame {frame_num}/{total_frames}")
+
+        bpy.data.objects.remove(cam_obj, do_unlink=True)
+
+        # Save metadata
+        meta = {
+            "scene_name": bpy.path.basename(bpy.data.filepath),
+            "render_width": self.render_resolution_x,
+            "render_height": self.render_resolution_y,
+            "total_frames": total_frames,
+            "fps": fps,
+            "waypoints": len(cameras),
+            "frames": frame_metadata,
+        }
+        meta_path = str(base_dir / "camera_data.json")
+        with open(meta_path, "w") as f:
+            json.dump(meta, f, indent=2)
+        results["files"].append({"type": "metadata", "path": meta_path, "filename": "camera_data.json"})
+
+        self._capture_log(f"Flythrough complete: {total_frames} frames from {len(cameras)} waypoints")
         results["logs"] = self.log_buffer
         return results
 

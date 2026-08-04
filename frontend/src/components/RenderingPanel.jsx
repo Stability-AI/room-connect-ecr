@@ -40,6 +40,10 @@ export default function RenderingPanel({
   onSelectLight,
   analysisData,
   onAnalyzeDistribution,
+  persistedState,
+  onPersistedStateChange,
+  backdropImage,
+  onBackdropChange,
 }) {
   const [cameraCount, setCameraCount] = useState(10);
   const [maximizeEntropy, setMaximizeEntropy] = useState(false);
@@ -84,12 +88,29 @@ export default function RenderingPanel({
   const [lightingBrightness, setLightingBrightness] = useState(1.5);
   const [includeBlend, setIncludeBlend] = useState(false);
   const [exportIntrinsics, setExportIntrinsics] = useState(false);
-  const [showDebugConsole, setShowDebugConsole] = useState(false);
+  const [colorManagement, setColorManagement] = useState("standard");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isRendering, setIsRendering] = useState(false);
-  const [renderStatus, setRenderStatus] = useState("");
-  const [renderLogs, setRenderLogs] = useState([]);
-  const [renderResults, setRenderResults] = useState(null);
+
+  // Use persisted state if available, fall back to local
+  const ps = persistedState || {};
+  const isRendering = ps.isRendering || false;
+  const renderStatus = ps.renderStatus || "";
+  const renderLogs = ps.renderLogs || [];
+  const renderResults = ps.renderResults || null;
+  const showDebugConsole = ps.showDebugConsole || false;
+  const isSplatRenderingPersisted = ps.isSplatRendering || false;
+  const splatResultsPersisted = ps.splatResults || null;
+  const isFlyRenderingPersisted = ps.isFlyRendering || false;
+  const flyResultPersisted = ps.flyResult || null;
+
+  const updateState = (updates) => {
+    if (onPersistedStateChange) onPersistedStateChange((s) => ({ ...s, ...updates }));
+  };
+  const setIsRendering = (v) => updateState({ isRendering: v });
+  const setRenderStatus = (v) => updateState({ renderStatus: v });
+  const setRenderLogs = (v) => updateState({ renderLogs: typeof v === "function" ? v(ps.renderLogs || []) : v });
+  const setRenderResults = (v) => updateState({ renderResults: v });
+  const setShowDebugConsole = (v) => updateState({ showDebugConsole: v });
 
   // Splat dataset state
   const [splatCount, setSplatCount] = useState(200);
@@ -99,8 +120,20 @@ export default function RenderingPanel({
   const [splatHdrDepth, setSplatHdrDepth] = useState("16");
   const [splatLogTransform, setSplatLogTransform] = useState(true);
   const [showSplatDialog, setShowSplatDialog] = useState(null); // null | "warning" | "confirm"
-  const [isSplatRendering, setIsSplatRendering] = useState(false);
-  const [splatResults, setSplatResults] = useState(null);
+  const isSplatRendering = isSplatRenderingPersisted;
+  const splatResults = splatResultsPersisted;
+  const setIsSplatRendering = (v) => updateState({ isSplatRendering: v });
+  const setSplatResults = (v) => updateState({ splatResults: v });
+
+  // Flythrough state
+  const [flyFrames, setFlyFrames] = useState(300);
+  const [flyFps, setFlyFps] = useState(30);
+  const [flyFormat, setFlyFormat] = useState("png");
+  const [flyDepth, setFlyDepth] = useState(false);
+  const isFlyRendering = isFlyRenderingPersisted;
+  const flyResult = flyResultPersisted;
+  const setIsFlyRendering = (v) => updateState({ isFlyRendering: v });
+  const setFlyResult = (v) => updateState({ flyResult: v });
 
   // Notify parent of FOV changes
   useEffect(() => {
@@ -123,6 +156,45 @@ export default function RenderingPanel({
       });
     }
   }, [effectiveVolumes, effectiveObjects, constrainToVolume, maximizeEntropy, selectedVolumeId, onRenderOverlaysChange]);
+
+  const handleBackdropUpload = async (file) => {
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (ext !== "png" && ext !== "exr" && ext !== "hdr") return;
+
+    const fileId = `backdrop_${Date.now()}`;
+    const url = URL.createObjectURL(file);
+
+    onBackdropChange({
+      fileId,
+      filename: file.name,
+      format: ext,
+      url,
+      useAsBackground: true,
+      useForLighting: true,
+      strength: 1.0,
+      exposure: 1.0,
+      _uploading: true,
+    });
+
+    try {
+      const { uploadSceneChunked } = await import("../utils/sceneUpload");
+      const result = await uploadSceneChunked(file);
+      onBackdropChange({
+        fileId: `${result.id}_${result.filename}`,
+        filename: file.name,
+        format: ext,
+        url,
+        useAsBackground: true,
+        useForLighting: true,
+        strength: 1.0,
+        exposure: 1.0,
+        backendPath: result.path,
+        _uploading: false,
+      });
+    } catch (err) {
+      console.error("Backdrop upload failed:", err);
+    }
+  };
 
   const handleAutoPlace = () => {
     if (!onAutoPlaceCameras) return;
@@ -284,6 +356,13 @@ export default function RenderingPanel({
           lightingBrightness: lightingBrightness,
           includeBlend: includeBlend,
           lights: sceneLights,
+          colorManagement: colorManagement,
+          backdropImage: backdropImage && !backdropImage._uploading ? {
+            fileId: backdropImage.fileId,
+            filename: backdropImage.filename,
+            strength: backdropImage.strength,
+            useForLighting: backdropImage.useForLighting,
+          } : undefined,
           cameras: cameras.map((c) => ({
             id: c.id,
             name: c.name,
@@ -357,6 +436,13 @@ export default function RenderingPanel({
           lightingBrightness: lightingBrightness,
           includeBlend: includeBlend,
           lights: sceneLights,
+          colorManagement: colorManagement,
+          backdropImage: backdropImage && !backdropImage._uploading ? {
+            fileId: backdropImage.fileId,
+            filename: backdropImage.filename,
+            strength: backdropImage.strength,
+            useForLighting: backdropImage.useForLighting,
+          } : undefined,
           cameras: [{
             id: cam.id,
             name: cam.name,
@@ -474,6 +560,13 @@ export default function RenderingPanel({
           overrideLighting: overrideLighting,
           lightingBrightness: lightingBrightness,
           lights: sceneLights,
+          colorManagement: colorManagement,
+          backdropImage: backdropImage && !backdropImage._uploading ? {
+            fileId: backdropImage.fileId,
+            filename: backdropImage.filename,
+            strength: backdropImage.strength,
+            useForLighting: backdropImage.useForLighting,
+          } : undefined,
           cameras: cameras.map((c) => ({
             id: c.id,
             name: c.name,
@@ -551,6 +644,77 @@ export default function RenderingPanel({
       a.href = splatResults.zip;
       a.download = "splat_dataset.zip";
       a.click();
+    }
+  };
+
+  // --- Flythrough handler ---
+  const handleRenderFlythrough = async () => {
+    if (!sceneFileId || cameras.length < 2) return;
+    setIsFlyRendering(true);
+    setFlyResult(null);
+    setRenderLogs([]);
+    setRenderStatus("Starting flythrough render...");
+
+    try {
+      const fov = propFovOverride || 60;
+      const response = await fetch("/api/render-flythrough", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneId: sceneFileId,
+          cameras: cameras.map((c) => ({
+            id: c.id, name: c.name, position: c.position,
+            quaternion: c.quaternion, fov: fov,
+          })),
+          totalFrames: flyFrames,
+          fps: flyFps,
+          format: flyFormat,
+          generateDepth: flyDepth,
+          overrideLighting: overrideLighting,
+          lightingBrightness: lightingBrightness,
+          lights: sceneLights,
+          colorManagement: colorManagement,
+          backdropImage: backdropImage && !backdropImage._uploading ? {
+            fileId: backdropImage.fileId,
+            filename: backdropImage.filename,
+            strength: backdropImage.strength,
+            useForLighting: backdropImage.useForLighting,
+          } : undefined,
+          width: renderWidth,
+          height: renderHeight,
+          samples: samples,
+        }),
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let currentEvent = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) { currentEvent = line.slice(7); }
+          else if (line.startsWith("data: ") && currentEvent) {
+            const data = line.slice(6);
+            if (currentEvent === "log") { setRenderLogs((p) => [...p, data]); setRenderStatus(data); }
+            else if (currentEvent === "result") {
+              try { const r = JSON.parse(data); setFlyResult(r); setRenderStatus(`Flythrough complete: ${r.frames} frames`); } catch (e) {}
+            } else if (currentEvent === "error") {
+              try { setRenderStatus(`Flythrough failed: ${JSON.parse(data).error}`); } catch (e) { setRenderStatus("Flythrough failed"); }
+            }
+            currentEvent = null;
+          }
+        }
+      }
+    } catch (err) {
+      setRenderStatus(`Flythrough failed: ${err.message}`);
+    } finally {
+      setIsFlyRendering(false);
     }
   };
 
@@ -1116,6 +1280,123 @@ export default function RenderingPanel({
               />
               <span>Show debug console</span>
             </label>
+            <div className="panel-row" style={{ marginTop: 6 }}>
+              <label className="panel-sublabel">Color management</label>
+              <select
+                value={colorManagement}
+                onChange={(e) => setColorManagement(e.target.value)}
+                style={{ flex: 1, background: "var(--bg-secondary)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 4, padding: "4px 8px", fontSize: "0.8rem" }}
+              >
+                <option value="standard">Standard (accurate colors)</option>
+                <option value="filmic">Filmic (compressed highlights)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Backdrop Image */}
+          <div className="panel-section" style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 16 }}>
+            <label className="panel-label">Backdrop Image (World Environment)</label>
+            <p className="panel-hint">Upload an equirectangular panorama (PNG, EXR, or HDR) for skybox and IBL lighting.</p>
+
+            {!backdropImage ? (
+              <label
+                style={{
+                  display: "block", padding: "16px 12px", border: "2px dashed var(--border)",
+                  borderRadius: 6, textAlign: "center", cursor: "pointer",
+                  color: "var(--text-secondary)", fontSize: "0.8rem", marginTop: 8,
+                }}
+                onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = "var(--accent)"; }}
+                onDragLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.style.borderColor = "var(--border)";
+                  const file = e.dataTransfer.files[0];
+                  if (file) handleBackdropUpload(file);
+                }}
+              >
+                Drop image or click to browse
+                <br /><span style={{ fontSize: "0.7rem" }}>Supported: PNG, EXR, HDR (equirectangular)</span>
+                <input
+                  type="file"
+                  accept=".png,.exr,.hdr"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) handleBackdropUpload(file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            ) : (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: "0.78rem", color: "var(--text-primary)" }}>
+                    {backdropImage.filename}
+                    <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginLeft: 6 }}>
+                      ({backdropImage.format.toUpperCase()})
+                    </span>
+                  </span>
+                  <button
+                    className="btn-delete"
+                    onClick={() => onBackdropChange(null)}
+                    title="Remove backdrop"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={backdropImage.useAsBackground}
+                    onChange={(e) => onBackdropChange({ ...backdropImage, useAsBackground: e.target.checked })}
+                  />
+                  <span>Show in viewport preview</span>
+                </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={backdropImage.useForLighting}
+                    onChange={(e) => onBackdropChange({ ...backdropImage, useForLighting: e.target.checked })}
+                  />
+                  <span>Use for lighting (IBL)</span>
+                </label>
+
+                <div className="panel-row" style={{ marginTop: 6 }}>
+                  <label className="panel-sublabel">Strength</label>
+                  <input
+                    type="range" className="cull-slider" min="0.1" max="5.0" step="0.1"
+                    value={backdropImage.strength}
+                    onChange={(e) => onBackdropChange({ ...backdropImage, strength: parseFloat(e.target.value) })}
+                    style={{ flex: 1 }}
+                  />
+                  <EditableValue
+                    value={backdropImage.strength}
+                    onChange={(v) => onBackdropChange({ ...backdropImage, strength: v })}
+                    min={0.1} max={5.0} defaultValue={1.0}
+                    format={(v) => v.toFixed(1)}
+                    style={{ minWidth: 30 }}
+                  />
+                </div>
+
+                <div className="panel-row" style={{ marginTop: 4 }}>
+                  <label className="panel-sublabel">Exposure</label>
+                  <input
+                    type="range" className="cull-slider" min="0.1" max="5.0" step="0.1"
+                    value={backdropImage.exposure}
+                    onChange={(e) => onBackdropChange({ ...backdropImage, exposure: parseFloat(e.target.value) })}
+                    style={{ flex: 1 }}
+                  />
+                  <EditableValue
+                    value={backdropImage.exposure}
+                    onChange={(v) => onBackdropChange({ ...backdropImage, exposure: v })}
+                    min={0.1} max={5.0} defaultValue={1.0}
+                    format={(v) => v.toFixed(1)}
+                    style={{ minWidth: 30 }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {!sceneFileId && uploadProgress !== null && uploadProgress !== undefined && (
@@ -1263,6 +1544,59 @@ export default function RenderingPanel({
             <div className="panel-actions" style={{ marginTop: 8 }}>
               <button className="btn btn-export" onClick={handleSplatDownload}>
                 Download Splat Dataset (ZIP)
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* --- Camera Flythrough Section --- */}
+      {hasScene && cameras.length >= 2 && (
+        <div className="panel-section" style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 16 }}>
+          <label className="panel-label">Camera Flythrough</label>
+          <p className="panel-hint" style={{ marginBottom: 8 }}>
+            Render interpolated camera path between placed cameras.
+          </p>
+          <div className="panel-row">
+            <label className="panel-sublabel">Frames</label>
+            <input type="number" className="panel-input panel-input-small" min={10} max={3000}
+              value={flyFrames} onChange={(e) => setFlyFrames(parseInt(e.target.value) || 300)} />
+          </div>
+          <div className="panel-row">
+            <label className="panel-sublabel">FPS</label>
+            <input type="number" className="panel-input panel-input-small" min={1} max={120}
+              value={flyFps} onChange={(e) => setFlyFps(parseInt(e.target.value) || 30)} />
+          </div>
+          <p className="panel-hint" style={{ fontSize: "0.72rem" }}>
+            Duration: {(flyFrames / flyFps).toFixed(1)}s | {cameras.length} waypoints
+          </p>
+          <div className="panel-row">
+            <label className="panel-sublabel">Format</label>
+            <select value={flyFormat} onChange={(e) => setFlyFormat(e.target.value)}
+              style={{ flex: 1, background: "var(--bg-secondary)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 4, padding: "4px 8px", fontSize: "0.8rem" }}>
+              <option value="png">PNG 8-bit</option>
+              <option value="exr">EXR 16-bit HDR</option>
+            </select>
+          </div>
+          <label className="checkbox-row" style={{ marginTop: 4 }}>
+            <input type="checkbox" checked={flyDepth} onChange={(e) => setFlyDepth(e.target.checked)} />
+            <span>Generate depth maps</span>
+          </label>
+          <div className="panel-actions" style={{ marginTop: 8 }}>
+            <button className="btn btn-primary" onClick={handleRenderFlythrough}
+              disabled={isFlyRendering || !sceneFileId || cameras.length < 2} style={{ width: "100%" }}>
+              {isFlyRendering ? "Rendering Flythrough..." : `Render Flythrough (${flyFrames} frames)`}
+            </button>
+          </div>
+          {isFlyRendering && (
+            <div style={{ marginTop: 8 }}>
+              <div className="barber-pole-container"><div className="barber-pole" /></div>
+            </div>
+          )}
+          {flyResult?.zip && (
+            <div className="panel-actions" style={{ marginTop: 8 }}>
+              <button className="btn btn-export" onClick={() => { const a = document.createElement("a"); a.href = flyResult.zip; a.download = "flythrough.zip"; a.click(); }}>
+                Download Flythrough (ZIP)
               </button>
             </div>
           )}

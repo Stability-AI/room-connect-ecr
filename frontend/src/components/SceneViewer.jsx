@@ -2,6 +2,8 @@ import React, { useRef, useState, useCallback, useEffect, useMemo } from "react"
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls, useGLTF, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import * as THREE from "three";
+import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
+import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { v4 as uuidv4 } from "uuid";
 import VolumeBox from "./VolumeBox";
@@ -52,7 +54,7 @@ const diffuseMaterial = new THREE.MeshStandardMaterial({
 
 const texturUnlitMaterial = null; // placeholder — handled per-mesh below
 
-function SceneModel({ url, shadingMode, onSceneReady }) {
+const SceneModel = React.memo(function SceneModel({ url, shadingMode, onSceneReady }) {
   const { scene } = useGLTF(url);
   const originalMaterials = useRef(new Map());
   const hasStoredOriginals = useRef(false);
@@ -149,7 +151,7 @@ function SceneModel({ url, shadingMode, onSceneReady }) {
   }, [scene, onSceneReady]);
 
   return <primitive object={scene} />;
-}
+});
 
 function CoverageHeatmap({ scene, faceCounts }) {
   const meshRef = useRef();
@@ -363,6 +365,69 @@ function CameraViewSwitcher({ activeCameraView, controlsRef }) {
   return null;
 }
 
+function BackdropSkybox({ backdropImage }) {
+  const { scene, gl } = useThree();
+  const envMapRef = useRef(null);
+  const textureRef = useRef(null);
+
+  useEffect(() => {
+    if (!backdropImage || !backdropImage.url || !backdropImage.useAsBackground) {
+      scene.background = new THREE.Color("#0d1117");
+      scene.environment = null;
+      return;
+    }
+
+    const onLoad = (texture) => {
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      textureRef.current = texture;
+      scene.background = texture;
+
+      if (backdropImage.useForLighting) {
+        const pmremGenerator = new THREE.PMREMGenerator(gl);
+        pmremGenerator.compileEquirectangularShader();
+        const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+        scene.environment = envMap;
+        envMapRef.current = envMap;
+        pmremGenerator.dispose();
+      } else {
+        scene.environment = null;
+      }
+    };
+
+    if (backdropImage.format === "exr") {
+      const loader = new EXRLoader();
+      loader.setDataType(THREE.HalfFloatType);
+      loader.load(backdropImage.url, onLoad);
+    } else if (backdropImage.format === "hdr") {
+      const loader = new RGBELoader();
+      loader.setDataType(THREE.HalfFloatType);
+      loader.load(backdropImage.url, onLoad);
+    } else {
+      const loader = new THREE.TextureLoader();
+      loader.load(backdropImage.url, onLoad);
+    }
+
+    return () => {
+      if (textureRef.current) textureRef.current.dispose();
+      if (envMapRef.current) envMapRef.current.dispose();
+      textureRef.current = null;
+      envMapRef.current = null;
+    };
+  }, [backdropImage?.url, backdropImage?.useAsBackground, backdropImage?.useForLighting, scene, gl]);
+
+  useEffect(() => {
+    if (backdropImage && backdropImage.useAsBackground) {
+      gl.toneMapping = THREE.ACESFilmicToneMapping;
+      gl.toneMappingExposure = backdropImage.exposure || 1.0;
+    } else {
+      gl.toneMapping = THREE.NoToneMapping;
+      gl.toneMappingExposure = 1.0;
+    }
+  }, [backdropImage?.useAsBackground, backdropImage?.exposure, gl]);
+
+  return null;
+}
+
 function GroundPlane() {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
@@ -400,6 +465,14 @@ export default function SceneViewer({
   selectedLightId,
   onSelectLight,
   analysisData,
+  objectConnections = [],
+  connectionObjects = [],
+  selectedAnnotationId,
+  onSelectAnnotation,
+  annotationMode,
+  onSceneMeshPick,
+  pickedMeshName,
+  backdropImage,
 }) {
   const [sceneHasLights, setSceneHasLights] = useState(false);
   const sceneObjRef = useRef(null);
@@ -410,10 +483,74 @@ export default function SceneViewer({
     if (onSceneReady) onSceneReady(scene);
   }, [onSceneReady]);
 
+  const handleCanvasClick = useCallback((event) => {
+    if (!annotationMode || !onSceneMeshPick || !sceneObjRef.current) return;
+
+    const canvas = event.target;
+    const rect = canvas.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+
+    const raycaster = new THREE.Raycaster();
+    const cameraRef = controlsRef.current?.object;
+    if (!cameraRef) return;
+
+    raycaster.setFromCamera(mouse, cameraRef);
+    const meshes = [];
+    sceneObjRef.current.traverse((child) => {
+      if (child.isMesh) meshes.push(child);
+    });
+    const intersects = raycaster.intersectObjects(meshes, false);
+    if (intersects.length > 0) {
+      const hit = intersects[0].object;
+      onSceneMeshPick({ name: hit.name || hit.parent?.name || "unnamed", object: hit });
+    }
+  }, [annotationMode, onSceneMeshPick]);
+
+  // Highlight exactly one picked mesh
+  const pickedMeshRef = useRef(null);
+  const pickedOriginalMaterial = useRef(null);
+  const pickHighlightMat = useMemo(() => new THREE.MeshBasicMaterial({
+    color: "#ff8800", transparent: true, opacity: 0.6, side: THREE.DoubleSide,
+  }), []);
+
+  useEffect(() => {
+    // Restore previous pick
+    if (pickedMeshRef.current && pickedOriginalMaterial.current) {
+      pickedMeshRef.current.material = pickedOriginalMaterial.current;
+      pickedMeshRef.current = null;
+      pickedOriginalMaterial.current = null;
+    }
+
+    if (!pickedMeshName || !sceneObjRef.current) return;
+
+    // Find the first exact match only
+    let found = false;
+    sceneObjRef.current.traverse((child) => {
+      if (found) return;
+      if (child.isMesh && child.name === pickedMeshName) {
+        pickedMeshRef.current = child;
+        pickedOriginalMaterial.current = child.material;
+        child.material = pickHighlightMat;
+        found = true;
+      }
+    });
+
+    return () => {
+      if (pickedMeshRef.current && pickedOriginalMaterial.current) {
+        pickedMeshRef.current.material = pickedOriginalMaterial.current;
+        pickedMeshRef.current = null;
+        pickedOriginalMaterial.current = null;
+      }
+    };
+  }, [pickedMeshName, pickHighlightMat]);
+
   const needsLighting = shadingMode === "diffuse" || shadingMode === "shaded";
 
   return (
-    <div className="scene-viewer">
+    <div className="scene-viewer" onDoubleClick={handleCanvasClick}>
       <Canvas
         camera={{ position: [5, 5, 5], fov: 60, near: 0.1, far: 10000 }}
         gl={{
@@ -424,8 +561,9 @@ export default function SceneViewer({
           logarithmicDepthBuffer: true,
         }}
       >
-        <color attach="background" args={["#0d1117"]} />
+        {!backdropImage?.useAsBackground && <color attach="background" args={["#0d1117"]} />}
         <CameraController orthographic={orthographic} />
+        <BackdropSkybox backdropImage={backdropImage} />
 
         {sceneUrl && (
           <SceneModel
@@ -474,8 +612,32 @@ export default function SceneViewer({
         )}
 
         {showOOBBs && detectedObjects && detectedObjects.map((obj, i) => (
-          <OOBBOverlay key={`oobb-${i}`} oobb={obj} />
+          <group key={`oobb-${i}`} onDoubleClick={(e) => {
+            e.stopPropagation();
+            if (onSelectAnnotation) onSelectAnnotation(obj.name);
+          }}>
+            <OOBBOverlay
+              oobb={obj}
+              color={selectedAnnotationId === obj.name ? "#ff8800" : "#44aaff"}
+            />
+          </group>
         ))}
+
+        {/* Object connection lines */}
+        {objectConnections.map((conn, i) => {
+          const srcObj = connectionObjects.find((o) => o.name === conn.source);
+          const tgtObj = connectionObjects.find((o) => o.name === conn.target);
+          if (!srcObj || !tgtObj) return null;
+          const color = "#ff3333";
+          const verts = new Float32Array([...srcObj.center, ...tgtObj.center]);
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+          return (
+            <lineSegments key={`conn-${i}`} geometry={geo} renderOrder={8}>
+              <lineBasicMaterial color={color} depthTest={false} linewidth={2} />
+            </lineSegments>
+          );
+        })}
 
         {/* Camera distribution analysis spheres */}
         {analysisData && analysisData.spatial.perCamera && (() => {

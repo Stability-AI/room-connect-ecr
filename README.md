@@ -1,16 +1,18 @@
-# Room Connect
+# Scene Connect
 
-An interactive web-based 3D application for interior scene analysis — define walkable areas, detect objects, place cameras, and render high-quality views via Blender Cycles.
+An interactive web-based 3D application for interior scene analysis, annotation, and rendering — analyze scenes, define walkable areas, annotate and connect objects, render high-quality views and flythroughs, and generate Gaussian Splatting training datasets via Blender Cycles.
 
 ## What It Does
 
-Room Connect lets you load large 3D interior scenes (GLTF/GLB, tested up to 700MB) and perform three core tasks:
+Scene Connect lets you load large 3D interior scenes (GLTF/GLB, tested up to 700MB) across four tabs:
 
-1. **Volume Connectivity** — Draw axis-aligned bounding boxes to define walkable areas, set up connectivity relationships between rooms/zones, and export the graph as JSON.
+1. **Scene** — Analyze mesh topology, PBR materials, and geometry quality. Export the complete scene as a Blender `.blend` file with cameras and lights.
 
-2. **Object Detection** — Filter scene meshes by name (e.g. "chair", "desk"), compute oriented bounding boxes (OOBBs), visualize them as 3D overlays, cull nested duplicates, and export object data.
+2. **Connectivity** — Draw axis-aligned bounding boxes to define walkable areas, set up connectivity relationships between rooms/zones, and export the graph as JSON.
 
-3. **Rendering** — Place cameras manually or automatically (with BVH-based collision avoidance), render from all viewpoints via Blender Cycles in the backend, and download results as a ZIP with color renders, depth maps, and camera parameters.
+3. **Annotations** — Detect objects by name filter, manually pick and rename meshes, add text descriptions, define spatial relationships (adjacent, on top of, inside, etc.), and render multi-view object captures for 3D reconstruction.
+
+4. **Rendering** — Place cameras manually or automatically, render from all viewpoints, generate Gaussian Splatting datasets (80-400 views with Nerfstudio export), and render camera flythroughs with interpolated paths.
 
 ## Screenshots
 
@@ -105,9 +107,42 @@ Open **http://localhost:3000**
 - Selectable lights: click in 3D viewport or list to highlight (orange in 3D, green in list)
 - Upload progress bar visible across all tabs during backend upload
 
+### Annotations & Object Connections
+- Object detection by name filter + manual mesh picking (double-click in 3D viewport)
+- Rename objects in scene graph, add text descriptions
+- Define spatial relationships between objects (6 types: adjacent, on top of, inside, part of, supports, supported by)
+- Connection lines visualized in 3D viewport (red)
+- Multi-view object rendering: Fibonacci-sphere 16-view in isolated studio (configurable views, resolution, samples, depth maps)
+- Export annotations as JSON (descriptions, OOBBs, connections)
+- GLB import: optionally import lights/cameras from GLB as editable objects
+
+### Camera Flythrough
+- Interpolated camera path between placed waypoints (lerp position + slerp rotation)
+- Configurable frame count and FPS with calculated duration
+- Animation-optimized Cycles: compositor denoise (Normal + Albedo passes), path guiding, fixed seed, deep bounces, light tree
+- PNG or EXR output with optional depth maps
+- Per-frame camera metadata (K matrix, intrinsics, extrinsics)
+
+### Backdrop Image (World Environment)
+- Upload equirectangular panoramas (PNG, EXR, HDR) as scene skybox and IBL lighting source
+- Three.js viewport preview with tone mapping and exposure control
+- Blender Environment Texture node with configurable strength and IBL toggle
+- Color management: Standard (accurate) or Filmic (compressed highlights) selectable per render
+
+### Multiview Object Rendering
+- Configurable background color with color picker (default white)
+- Transparent background option (RGBA PNG)
+- Isolated render environment: single shadowless sun, no scene lights, no backdrop bleed
+
+### Scene Tools
+- Export Complete Blender Scene: full `.blend` file with cameras, lights, and render settings
+- Scene Analysis: mesh topology, PBR material detection (Principled BSDF node tracing), geometry quality (watertight, normals, intersections), downloadable as JSON report
+- Point Cloud Generation: curvature-weighted sampling for 3DGS initialization (250k–1.5M points), with presets, advanced parameter controls, scene-colour baking, and COLMAP/Blender coordinate export
+- Point Cloud Statistics: k-NN density estimation, Pearson curvature–density correlation, quartile analysis, downloadable as JSON
+
 ### Live Deployment
 
-Room Connect is deployed on the Stability AI data cluster (`data1-us-west-2`) at `room-connect.data.stability.ai`. CI/CD via GitHub Actions pushes Docker images to ECR on merge; ArgoCD syncs the deployment.
+Scene Connect is deployed on the Stability AI data cluster (`data1-us-west-2`) at `room-connect.data.stability.ai`. CI/CD via GitHub Actions pushes Docker images to ECR on merge; ArgoCD syncs the deployment.
 
 ## Documentation
 

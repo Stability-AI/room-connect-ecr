@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import * as THREE from "three";
 
-export default function OOBBOverlay({ oobb }) {
+export default function OOBBOverlay({ oobb, color = "#ff6600" }) {
   const { center, halfExtents, quaternion } = oobb;
 
   if (!center || !halfExtents) return null;
@@ -28,7 +28,7 @@ export default function OOBBOverlay({ oobb }) {
       <mesh renderOrder={10}>
         <boxGeometry args={size} />
         <meshBasicMaterial
-          color="#ff6600"
+          color={color}
           transparent
           opacity={0.12}
           side={THREE.DoubleSide}
@@ -37,7 +37,7 @@ export default function OOBBOverlay({ oobb }) {
       </mesh>
       <lineSegments renderOrder={11}>
         <primitive object={edgesGeometry} attach="geometry" />
-        <lineBasicMaterial color="#ff6600" linewidth={1} depthTest={false} transparent opacity={0.8} />
+        <lineBasicMaterial color={color} linewidth={1} depthTest={false} transparent opacity={0.8} />
       </lineSegments>
     </group>
   );

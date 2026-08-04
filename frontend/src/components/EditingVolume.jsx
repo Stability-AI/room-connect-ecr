@@ -37,7 +37,15 @@ export default function EditingVolume({ volume, onEditComplete }) {
       const point = getGroundPoint(e);
       if (!point) return;
 
-      const delta = new THREE.Vector3().subVectors(point, dragStart);
+      const rawDelta = new THREE.Vector3().subVectors(point, dragStart);
+
+      // Clamp delta to prevent huge jumps from steep camera angles
+      const maxDelta = Math.max(...volumeSize) * 0.5 || 50;
+      const delta = new THREE.Vector3(
+        Math.max(-maxDelta, Math.min(maxDelta, rawDelta.x)),
+        Math.max(-maxDelta, Math.min(maxDelta, rawDelta.y)),
+        Math.max(-maxDelta, Math.min(maxDelta, rawDelta.z)),
+      );
 
       if (dragType === "translate") {
         setVolumePos((prev) => {
@@ -52,7 +60,7 @@ export default function EditingVolume({ volume, onEditComplete }) {
           const next = [...prev];
           const d =
             dragAxis === 0 ? delta.x : dragAxis === 2 ? delta.z : delta.z * -0.5;
-          next[dragAxis] = Math.max(MIN_SIZE, next[dragAxis] + d * 2);
+          next[dragAxis] = Math.max(MIN_SIZE, Math.min(next[dragAxis] + d * 2, next[dragAxis] * 3));
           return next;
         });
       }

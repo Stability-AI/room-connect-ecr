@@ -6,6 +6,8 @@ import VolumeList from "./components/VolumeList";
 import VolumeDialog from "./components/VolumeDialog";
 import ObjectDetectionPanel from "./components/ObjectDetectionPanel";
 import RenderingPanel from "./components/RenderingPanel";
+import ScenePanel from "./components/ScenePanel";
+import AnnotationsPanel from "./components/AnnotationsPanel";
 import { detectObjects, cullOverlappingOOBBs, mergeOverlappingOOBBs } from "./utils/objectDetection";
 import { uploadSceneChunked } from "./utils/sceneUpload";
 import { v4 as uuidv4 } from "uuid";
@@ -14,7 +16,7 @@ import { autoPlaceCameras, mergeSceneGeometries, buildSceneBVH } from "./utils/c
 import { analyzeDistribution } from "./utils/cameraAnalysis";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("connectivity");
+  const [activeTab, setActiveTab] = useState("scene");
   const [sceneUrl, setSceneUrl] = useState(null);
   const [sceneFilename, setSceneFilename] = useState(null);
   const [volumes, setVolumes] = useState([]);
@@ -50,6 +52,67 @@ export default function App() {
   // Camera distribution analysis state
   const [analysisData, setAnalysisData] = useState(null);
 
+  // Annotations & connections state
+  const [objectAnnotations, setObjectAnnotations] = useState({});
+  const [objectConnections, setObjectConnections] = useState([]);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState(null);
+  const [pickedMesh, setPickedMesh] = useState(null);
+
+  // Backdrop image state
+  const [backdropImage, setBackdropImage] = useState(null);
+
+  // Persistent render state (survives tab switches)
+  const [annotationRenderState, setAnnotationRenderState] = useState({
+    isRendering: false, renderResult: null, renderLogs: [], showConsole: false,
+  });
+  const [renderingTabState, setRenderingTabState] = useState({
+    isRendering: false, renderStatus: "", renderLogs: [], renderResults: null,
+    showDebugConsole: false, isSplatRendering: false, splatResults: null,
+    isFlyRendering: false, flyResult: null,
+  });
+
+  const handleSceneMeshPick = useCallback((meshInfo) => {
+    setPickedMesh(meshInfo);
+  }, []);
+
+  const handleAddPickedToPool = useCallback((name) => {
+    if (!pickedMesh) return;
+
+    const meshObj = pickedMesh.object;
+    if (meshObj && meshObj.isMesh) {
+      // Rename the mesh in the Three.js scene graph
+      meshObj.name = name;
+      if (meshObj.parent && meshObj.parent.name === pickedMesh.name) {
+        meshObj.parent.name = name;
+      }
+
+      const box = new THREE.Box3().setFromObject(meshObj);
+      const center = new THREE.Vector3();
+      const size = new THREE.Vector3();
+      box.getCenter(center);
+      box.getSize(size);
+
+      const worldPos = meshObj.getWorldPosition(new THREE.Vector3());
+      const worldScale = meshObj.getWorldScale(new THREE.Vector3());
+
+      const newObj = {
+        name: name,
+        center: [center.x, center.y, center.z],
+        halfExtents: [size.x / 2, size.y / 2, size.z / 2],
+        rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        quaternion: [0, 0, 0, 1],
+        worldPosition: [worldPos.x, worldPos.y, worldPos.z],
+        worldScale: [worldScale.x, worldScale.y, worldScale.z],
+      };
+
+      setDetectedObjects((prev) => {
+        if (prev.some((o) => o.name === name)) return prev;
+        return [...prev, newObj];
+      });
+    }
+    setPickedMesh(null);
+  }, [pickedMesh]);
+
   // Camera management state
   const [cameras, setCameras] = useState([]);
   const [selectedCameraId, setSelectedCameraId] = useState(null);
@@ -58,6 +121,7 @@ export default function App() {
 
   // Hot-swap state
   const [hotSwapFile, setHotSwapFile] = useState(null);
+  const [importGLBExtras, setImportGLBExtras] = useState(true);
 
   const loadSceneFile = useCallback((file, clearMode = "all") => {
     if (sceneUrl && sceneUrl.startsWith("blob:")) {
@@ -115,7 +179,77 @@ export default function App() {
 
   const handleSceneReady = useCallback((scene) => {
     sceneRef.current = scene;
-  }, []);
+
+    if (!importGLBExtras) return;
+
+    const importedCameras = [];
+    const importedLights = [];
+
+    scene.traverse((child) => {
+      if (child.isCamera) {
+        const pos = child.getWorldPosition(new THREE.Vector3());
+        const quat = child.getWorldQuaternion(new THREE.Quaternion());
+        importedCameras.push({
+          id: `glb-cam-${child.name || importedCameras.length}`,
+          name: child.name || `GLB Camera ${importedCameras.length + 1}`,
+          position: [pos.x, pos.y, pos.z],
+          quaternion: [quat.x, quat.y, quat.z, quat.w],
+          fov: child.fov || 60,
+        });
+      }
+
+      if (child.isLight) {
+        const pos = child.getWorldPosition(new THREE.Vector3());
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(child.getWorldQuaternion(new THREE.Quaternion()));
+        const quat = child.getWorldQuaternion(new THREE.Quaternion());
+
+        let lightType = "spot";
+        let angle = 120;
+        let sizeX = 1.0;
+        let sizeY = 1.0;
+
+        if (child.isSpotLight) {
+          lightType = "spot";
+          angle = child.angle ? (child.angle * 180 / Math.PI) : 120;
+        } else if (child.isRectAreaLight) {
+          lightType = "area";
+          sizeX = child.width || 1.0;
+          sizeY = child.height || 1.0;
+        } else if (child.isPointLight) {
+          lightType = "spot";
+          angle = 170; // near-omnidirectional
+        } else if (child.isDirectionalLight) {
+          lightType = "area";
+          sizeX = 10.0; // large area approximates parallel rays
+          sizeY = 10.0;
+        } else if (child.isHemisphereLight || child.isAmbientLight) {
+          return; // skip ambient lights, no positional equivalent
+        }
+
+        importedLights.push({
+          id: `glb-light-${child.name || importedLights.length}`,
+          type: lightType,
+          position: [pos.x, pos.y, pos.z],
+          direction: [forward.x, forward.y, forward.z],
+          quaternion: [quat.x, quat.y, quat.z, quat.w],
+          intensity: child.intensity || 1000,
+          exposure: 0,
+          angle: angle,
+          sizeX: sizeX,
+          sizeY: sizeY,
+        });
+      }
+    });
+
+    if (importedCameras.length > 0) {
+      setCameras((prev) => [...prev, ...importedCameras]);
+      console.log(`[GLB Import] Imported ${importedCameras.length} cameras`);
+    }
+    if (importedLights.length > 0) {
+      setSceneLights((prev) => [...prev, ...importedLights]);
+      console.log(`[GLB Import] Imported ${importedLights.length} lights`);
+    }
+  }, [importGLBExtras]);
 
   const handleDetectObjects = useCallback((filterTerms, exclusive) => {
     if (!sceneRef.current) return;
@@ -562,21 +696,10 @@ export default function App() {
             selectedVolumeId={selectedVolumeId}
             onSelect={setSelectedVolumeId}
             onDelete={handleDeleteVolume}
-          />
-        );
-      case "detection":
-        return (
-          <ObjectDetectionPanel
             hasScene={!!sceneUrl}
-            sceneFilename={sceneFilename}
-            onDetect={handleDetectObjects}
-            onToggleOOBBs={handleToggleOOBBs}
-            onClear={handleClearObjects}
-            onCull={handleCullSelection}
-            onMerge={handleMergeSelection}
-            onExport={handleExportObjects}
-            detectedObjects={detectedObjects}
-            showOOBBs={showOOBBs}
+            isDrawing={isDrawing}
+            onStartDraw={handleStartDraw}
+            onExport={handleExport}
           />
         );
       case "rendering":
@@ -619,6 +742,73 @@ export default function App() {
             onRenderOverlaysChange={setRenderOverlays}
             onFovChange={setFovOverride}
             propFovOverride={fovOverride}
+            persistedState={renderingTabState}
+            onPersistedStateChange={setRenderingTabState}
+            backdropImage={backdropImage}
+            onBackdropChange={setBackdropImage}
+          />
+        );
+      case "annotations":
+        return (
+          <AnnotationsPanel
+            hasScene={!!sceneUrl}
+            sceneFileId={sceneFileId}
+            sceneFilename={sceneFilename}
+            detectedObjects={detectedObjects}
+            showOOBBs={showOOBBs}
+            onDetect={handleDetectObjects}
+            onToggleOOBBs={handleToggleOOBBs}
+            onClearDetection={handleClearObjects}
+            onCull={handleCullSelection}
+            onMerge={handleMergeSelection}
+            onExportObjects={handleExportObjects}
+            annotations={objectAnnotations}
+            onUpdateAnnotation={(name, data) => setObjectAnnotations((prev) => ({ ...prev, [name]: { ...prev[name], ...data } }))}
+            connections={objectConnections}
+            onAddConnection={(conn) => setObjectConnections((prev) => [...prev, conn])}
+            onRemoveConnection={(idx) => setObjectConnections((prev) => prev.filter((_, i) => i !== idx))}
+            selectedAnnotationId={selectedAnnotationId}
+            onSelectAnnotation={setSelectedAnnotationId}
+            pickedMesh={pickedMesh}
+            onAddToPool={handleAddPickedToPool}
+            onClearPickedMesh={() => setPickedMesh(null)}
+            onRemoveFromPool={(name) => setDetectedObjects((prev) => prev.filter((o) => o.name !== name))}
+            onRenameInPool={(oldName, newName) => {
+              if (sceneRef.current) {
+                sceneRef.current.traverse((child) => {
+                  if (child.isMesh && child.name === oldName) child.name = newName;
+                });
+              }
+              setDetectedObjects((prev) => prev.map((o) => o.name === oldName ? { ...o, name: newName } : o));
+              setObjectConnections((prev) => prev.map((c) => ({
+                ...c,
+                source: c.source === oldName ? newName : c.source,
+                target: c.target === oldName ? newName : c.target,
+              })));
+              setObjectAnnotations((prev) => {
+                const updated = { ...prev };
+                if (updated[oldName]) { updated[newName] = updated[oldName]; delete updated[oldName]; }
+                return updated;
+              });
+              if (selectedAnnotationId === oldName) setSelectedAnnotationId(newName);
+            }}
+            onClearAllFromPool={() => { setDetectedObjects([]); setObjectConnections([]); }}
+            renderState={annotationRenderState}
+            onRenderStateChange={setAnnotationRenderState}
+          />
+        );
+      case "scene":
+        return (
+          <ScenePanel
+            hasScene={!!sceneUrl}
+            sceneFileId={sceneFileId}
+            cameras={cameras}
+            sceneLights={sceneLights}
+            overrideLighting={false}
+            lightingBrightness={lightingBrightness}
+            renderWidth={renderWidth}
+            renderHeight={renderHeight}
+            samples={128}
           />
         );
       default:
@@ -632,6 +822,8 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={handleTabChange}
         onFileLoad={handleFileLoad}
+        importGLBExtras={importGLBExtras}
+        onToggleImportExtras={() => setImportGLBExtras((v) => !v)}
         onStartDraw={handleStartDraw}
         onExport={handleExport}
         isDrawing={isDrawing}
@@ -663,8 +855,8 @@ export default function App() {
           shadingMode={shadingMode}
           orthographic={orthographic}
           onSceneReady={handleSceneReady}
-          detectedObjects={activeTab === "detection" ? detectedObjects : []}
-          showOOBBs={showOOBBs}
+          detectedObjects={activeTab === "annotations" ? detectedObjects : []}
+          showOOBBs={showOOBBs || activeTab === "annotations"}
           lightingBrightness={lightingBrightness}
           cameras={activeTab === "rendering" ? cameras : []}
           selectedCameraId={selectedCameraId}
@@ -679,6 +871,14 @@ export default function App() {
           selectedLightId={selectedLightId}
           onSelectLight={setSelectedLightId}
           analysisData={activeTab === "rendering" ? analysisData : null}
+          objectConnections={activeTab === "annotations" ? objectConnections : []}
+          connectionObjects={activeTab === "annotations" ? detectedObjects : []}
+          selectedAnnotationId={activeTab === "annotations" ? selectedAnnotationId : null}
+          onSelectAnnotation={activeTab === "annotations" ? setSelectedAnnotationId : undefined}
+          annotationMode={activeTab === "annotations"}
+          onSceneMeshPick={activeTab === "annotations" ? handleSceneMeshPick : undefined}
+          pickedMeshName={activeTab === "annotations" && pickedMesh ? pickedMesh.name : null}
+          backdropImage={backdropImage}
         />
         {renderSidePanel()}
       </div>

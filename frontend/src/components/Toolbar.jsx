@@ -1,8 +1,9 @@
 import React, { useRef } from "react";
 
 const TABS = [
+  { id: "scene", label: "Scene" },
   { id: "connectivity", label: "Connectivity" },
-  { id: "detection", label: "Object Detection" },
+  { id: "annotations", label: "Annotations" },
   { id: "rendering", label: "Rendering" },
 ];
 
@@ -18,6 +19,8 @@ export default function Toolbar({
   activeTab,
   onTabChange,
   onFileLoad,
+  importGLBExtras,
+  onToggleImportExtras,
   onStartDraw,
   onExport,
   isDrawing,
@@ -42,7 +45,7 @@ export default function Toolbar({
     <div className="toolbar">
       <div className="toolbar-left">
         <div className="toolbar-brand">
-          <h1>Room Connect</h1>
+          <h1>Scene Connect</h1>
         </div>
         <div className="toolbar-tabs">
           {TABS.map((tab) => (
@@ -70,6 +73,10 @@ export default function Toolbar({
         >
           Load Scene (.glb)
         </button>
+        <label className="checkbox-row" style={{ marginBottom: 0, fontSize: "0.7rem", opacity: 0.8 }} title="Import lights and cameras from the GLB file">
+          <input type="checkbox" checked={importGLBExtras} onChange={onToggleImportExtras} />
+          <span>Import lights/cameras</span>
+        </label>
 
         {activeTab === "connectivity" && (
           <>
